@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trading Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container-fluid py-3">
+        
+        <header class="d-flex flex-wrap justify-content-between align-items-center pb-3 mb-4 border-bottom">
+            <div class="d-flex align-items-center">
+                <span class="fs-4 fw-bold">📈 Algo AI Trading</span>
+                <span id="loading-indicator" class="ms-3 spinner-border spinner-border-sm text-secondary d-none" role="status"></span>
+            </div>
+            <div class="leaderboard-banner d-flex gap-4 fs-5" id="leaderboard-container">
+                <div>🏆 <span id="rank-1-name" class="fw-bold">Loading...</span> <span class="badge bg-success ms-1" id="rank-1-pnl">-</span></div>
+                <div>🥈 <span id="rank-2-name" class="fw-bold">Loading...</span> <span class="badge bg-secondary ms-1" id="rank-2-pnl">-</span></div>
+                <div>🥉 <span id="rank-3-name" class="fw-bold">Loading...</span> <span class="badge bg-warning text-dark ms-1" id="rank-3-pnl">-</span></div>
+            </div>
+        </header>
+
+        <ul class="nav nav-pills mb-4 justify-content-center custom-tabs" id="ai-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="gpt-tab" data-bs-toggle="tab" data-bs-target="#tab-pane" type="button" role="tab" onclick="switchAI('gpt')">GPT</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="gemini-tab" data-bs-toggle="tab" data-bs-target="#tab-pane" type="button" role="tab" onclick="switchAI('gemini')">Gemini</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="grok-tab" data-bs-toggle="tab" data-bs-target="#tab-pane" type="button" role="tab" onclick="switchAI('grok')">Grok</button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="myTabContent">
+            <div class="tab-pane fade show active" id="tab-pane" role="tabpanel">
+                
+                <div class="row row-cols-2 row-cols-md-5 g-3 mb-4">
+                    <div class="col"><div class="stat-card"><h5>Current Capital</h5><h3 id="stat-capital">-</h3></div></div>
+                    <div class="col"><div class="stat-card"><h5>Today's P&L</h5><h3 id="stat-today-pnl">-</h3></div></div>
+                    <div class="col"><div class="stat-card"><h5>Overall P&L</h5><h3 id="stat-total-pnl">-</h3></div></div>
+                    <div class="col"><div class="stat-card"><h5>Realized P&L</h5><h3 id="stat-realized-pnl">-</h3></div></div>
+                    <div class="col"><div class="stat-card"><h5>Unrealized P&L</h5><h3 id="stat-unrealized-pnl">-</h3></div></div>
+                    
+                    <div class="col"><div class="stat-card"><h5>Open Position</h5><h4 id="stat-open-pos" class="text-truncate">-</h4></div></div>
+                    <div class="col"><div class="stat-card"><h5>Trades Today</h5><h3 id="stat-trades-today">-</h3></div></div>
+                    <div class="col"><div class="stat-card"><h5>Win Rate</h5><h3 id="stat-win-rate">-</h3></div></div>
+                    <div class="col"><div class="stat-card"><h5>Total Trades</h5><h3 id="stat-total-trades">-</h3></div></div>
+                    <div class="col"><div class="stat-card"><h5>Current Rank</h5><h3 id="stat-rank">-</h3></div></div>
+                </div>
+
+                <div class="row mb-4">
+                    <div class="col-md-6 mb-3">
+                        <div class="chart-container p-3 rounded">
+                            <canvas id="equityCurveChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <div class="chart-container p-3 rounded">
+                            <canvas id="dailyPnlChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card bg-dark border-secondary">
+                    <div class="card-header border-secondary fw-bold">Recent Trades (<span id="table-ai-label">GPT</span>)</div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover table-striped mb-0" id="trades-table">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Action</th>
+                                        <th>Symbol</th>
+                                        <th>Quantity</th>
+                                        <th>Price</th>
+                                        <th>PnL</th>
+                                        <th>Reason</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    </tbody>
+                            </table>
+                            <div id="empty-state" class="text-center py-4 text-muted d-none">
+                                No trades available for this AI yet.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

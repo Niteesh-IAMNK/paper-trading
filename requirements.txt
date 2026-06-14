@@ -1,0 +1,5 @@
+requests
+fyers-apiv3
+python-dotenv
+pandas
+numpy
