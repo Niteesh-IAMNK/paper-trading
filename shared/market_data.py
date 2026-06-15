@@ -1,8 +1,7 @@
 from datetime import datetime
-from copy import deepcopy
+from .fyers_market import get_multiple_ltps
 
-
-_latest_market = {
+MARKET = {
     "timestamp": None,
     "nifty": None,
     "banknifty": None,
@@ -10,103 +9,44 @@ _latest_market = {
 }
 
 
-def update_index(
-    *,
-    nifty=None,
-    banknifty=None
-):
+def refresh_indices():
     """
-    Update NIFTY and BANKNIFTY prices.
+    Pull latest index prices from FYERS.
     """
 
-    global _latest_market
+    prices = get_multiple_ltps(
+        [
+            "NSE:NIFTY50-INDEX",
+            "NSE:NIFTYBANK-INDEX"
+        ]
+    )
 
-    _latest_market["timestamp"] = datetime.utcnow()
+    MARKET["timestamp"] = datetime.utcnow()
 
-    if nifty is not None:
-        _latest_market["nifty"] = float(nifty)
+    MARKET["nifty"] = prices.get(
+        "NSE:NIFTY50-INDEX"
+    )
 
-    if banknifty is not None:
-        _latest_market["banknifty"] = float(banknifty)
+    MARKET["banknifty"] = prices.get(
+        "NSE:NIFTYBANK-INDEX"
+    )
 
-
-def update_symbol(
-    symbol: str,
-    ltp: float,
-    volume: int = 0,
-    oi: int = 0
-):
-    """
-    Update a symbol price.
-    Can be used for:
-    - Options
-    - Stocks
-    - Indices
-    """
-
-    global _latest_market
-
-    _latest_market["timestamp"] = datetime.utcnow()
-
-    _latest_market["symbols"][symbol] = {
-        "ltp": float(ltp),
-        "volume": volume,
-        "oi": oi,
-        "updated_at": datetime.utcnow()
-    }
-
-
-def get_symbol(symbol: str):
-    """
-    Get latest data for a symbol.
-    """
-
-    return _latest_market["symbols"].get(symbol)
-
-
-def get_ltp(symbol: str):
-    """
-    Get latest traded price.
-    """
-
-    data = get_symbol(symbol)
-
-    if data is None:
-        return None
-
-    return data["ltp"]
+    return MARKET
 
 
 def get_nifty():
-    return _latest_market["nifty"]
+    return MARKET["nifty"]
 
 
 def get_banknifty():
-    return _latest_market["banknifty"]
+    return MARKET["banknifty"]
 
 
-def get_timestamp():
-    return _latest_market["timestamp"]
-
+def get_market():
+    return MARKET
 
 def get_market_data():
     """
-    Returns a safe copy.
+    Backward compatibility for older modules.
     """
-
-    return deepcopy(_latest_market)
-
-
-def reset_market_data():
-    """
-    Used for tests and replay mode.
-    """
-
-    global _latest_market
-
-    _latest_market = {
-        "timestamp": None,
-        "nifty": None,
-        "banknifty": None,
-        "symbols": {}
-    }
+    return get_market()

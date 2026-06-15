@@ -38,3 +38,18 @@ def generate_access_token(auth_code: str):
     response = session.generate_token()
 
     return response
+
+def get_fyers():
+    """
+    Returns authenticated FYERS client.
+    """
+
+    access_token = os.getenv(
+        "FYERS_ACCESS_TOKEN"
+    )
+
+    return fyersModel.FyersModel(
+        client_id=CLIENT_ID,
+        token=access_token,
+        is_async=False
+    )

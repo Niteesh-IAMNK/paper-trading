@@ -1,7 +1,7 @@
 from shared.fyers_auth import get_login_url
 
 print(get_login_url())
-from shared.fyers_auth import generate_access_token
+from shared.fyers_auth import generate_access_tokenw
 
 auth_code = input(
     "Enter auth_code: "

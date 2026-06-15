@@ -1,29 +1,35 @@
 """
-Configuration parameters for the F&O Derivative Trading Strategy.
-Designed for high-reliability execution on long-running servers.
+Configuration parameters for the Alpha-Confluence Trend System.
+Designed for high-reliability algorithmic options execution.
 """
 
 # Strategy Identification
-STRATEGY_NAME = "AlphaDerivatives"
+STRATEGY_NAME = "AlphaConfluenceOptions"
 
-# Trading Target Configuration
-# Supported base underlyings: "nifty", "banknifty"
-BASE_UNDERLYING = "nifty" 
-SYMBOL_FILTER_KEYWORD = "NIFTY"
+# Time Constraints (IST)
+# 09:30 - Allow overnight volatility to settle and VWAP to anchor
+TRADE_START_TIME = "09:30:00"
+# 15:15 - Strict auto square-off to avoid closing volatility
+AUTO_SQUARE_OFF_TIME = "15:15:00"
 
 # Technical Indicator Parameters
-SHORT_WINDOW = 9
-LONG_WINDOW = 21
+EMA_FAST = 9
+EMA_SLOW = 21
+RSI_PERIOD = 14
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+VOLUME_SMA_PERIOD = 20
+HISTORY_LIMIT = 200  # Safe buffer for calculating RSI and MACD cleanly
 
 # Position Sizing & Capital Allocation
-MAX_LOTS_PER_TRADE = 2            # Conservative risk limitation
-CAPITAL_RESERVE_PCT = 0.10        # Keep 10% cash cushion for safety
+CAPITAL_ALLOCATION_PCT = 0.05     # 5% of available cash per trade (Conservative)
+DEFAULT_LOT_SIZE = 25             # Default NIFTY lot size
+MAX_LOTS_PER_TRADE = 5            # Cap on maximum lot exposure
 
-# Risk Management Thresholds
-STOP_LOSS_PCT = 0.15              # 15% stop loss on option/future premium
-TAKE_PROFIT_PCT = 0.30            # 30% take profit on option/future premium
-MAX_DAILY_DRAWDOWN_PCT = 0.05     # 5% maximum capital drawdown per day
-
-# Time-based Execution Constraints (IST)
-AUTO_SQUARE_OFF_TIME = "15:15:00" # Square off open positions before market close
-COOLDOWN_PERIOD_SECONDS = 300     # 5 minutes minimal delay between successive trades
+# Risk Management & Trade Limits
+MAX_DAILY_TRADES = 8              # System limit to prevent over-trading
+MAX_DAILY_DRAWDOWN_PCT = 0.05     # Hard halt if 5% of daily capital is lost
+STOP_LOSS_PCT = 0.15              # 15% hard stop on option premium
+TAKE_PROFIT_PCT = 0.30            # 30% take profit on option premium
+TRAIL_BREAKEVEN_PCT = 0.10        # Move SL to breakeven at 10% profit

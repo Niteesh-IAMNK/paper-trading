@@ -57,18 +57,24 @@ def create_tables():
     )
     """)
 
+
     # -------------------------
-    # Daily Summary
+    # Daily PnL
     # -------------------------
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS daily_summary (
+    CREATE TABLE IF NOT EXISTS daily_pnl (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+
         trade_date TEXT NOT NULL,
         ai_name TEXT NOT NULL,
-        capital REAL NOT NULL,
-        pnl REAL DEFAULT 0,
-        trades INTEGER DEFAULT 0,
-        win_rate REAL DEFAULT 0
+
+        opening_capital REAL NOT NULL,
+        closing_capital REAL NOT NULL,
+
+        pnl REAL NOT NULL,
+        return_pct REAL DEFAULT 0,
+
+        trades INTEGER DEFAULT 0
     )
     """)
 

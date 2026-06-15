@@ -11,3 +11,46 @@ Qty: 50
 Price: ₹152.25
 Reason:
 EMA crossover
+2026-06-14 16:33:27,172 | INFO | Started task every 5 seconds.
+2026-06-14 16:33:27,276 | INFO | NIFTY=23622.9 BANKNIFTY=56814.8
+2026-06-14 16:33:32,509 | INFO | NIFTY=23622.9 BANKNIFTY=56814.8
+2026-06-14 16:33:37,192 | INFO | Task stopped.
+2026-06-14 16:58:19,638 | INFO | Paper Trading Engine Started.
+2026-06-14 16:58:20,086 | INFO | All positions squared off.
+2026-06-14 16:58:22,144 | INFO | All positions squared off.
+2026-06-14 16:58:24,193 | INFO | All positions squared off.
+2026-06-14 16:58:26,248 | INFO | All positions squared off.
+2026-06-14 16:58:28,299 | INFO | All positions squared off.
+2026-06-14 16:58:30,401 | INFO | All positions squared off.
+2026-06-14 16:58:32,518 | INFO | All positions squared off.
+2026-06-14 16:58:34,603 | INFO | All positions squared off.
+2026-06-14 16:58:36,649 | INFO | All positions squared off.
+2026-06-14 16:58:38,693 | INFO | All positions squared off.
+2026-06-14 16:58:40,748 | INFO | All positions squared off.
+2026-06-14 16:58:42,799 | INFO | All positions squared off.
+2026-06-14 16:58:44,851 | INFO | All positions squared off.
+2026-06-14 16:58:46,914 | INFO | All positions squared off.
+2026-06-14 16:58:49,083 | INFO | All positions squared off.
+2026-06-14 16:58:51,249 | INFO | All positions squared off.
+2026-06-14 16:58:53,299 | INFO | All positions squared off.
+2026-06-14 16:58:55,348 | INFO | All positions squared off.
+2026-06-14 16:58:57,399 | INFO | All positions squared off.
+2026-06-14 16:58:59,449 | INFO | All positions squared off.
+2026-06-14 16:59:01,506 | INFO | All positions squared off.
+2026-06-14 16:59:03,623 | INFO | All positions squared off.
+2026-06-14 16:59:05,691 | INFO | All positions squared off.
+2026-06-14 16:59:07,783 | INFO | All positions squared off.
+2026-06-14 16:59:09,827 | INFO | All positions squared off.
+2026-06-14 16:59:11,875 | INFO | All positions squared off.
+2026-06-14 16:59:13,925 | INFO | All positions squared off.
+2026-06-14 16:59:15,974 | INFO | All positions squared off.
+2026-06-14 16:59:18,027 | INFO | All positions squared off.
+2026-06-14 16:59:20,239 | INFO | All positions squared off.
+2026-06-14 16:59:22,294 | INFO | All positions squared off.
+2026-06-14 16:59:24,451 | INFO | All positions squared off.
+2026-06-14 16:59:26,496 | INFO | All positions squared off.
+2026-06-14 16:59:28,544 | INFO | All positions squared off.
+2026-06-14 16:59:30,597 | INFO | All positions squared off.
+2026-06-14 16:59:32,650 | INFO | All positions squared off.
+2026-06-14 16:59:34,695 | INFO | All positions squared off.
+2026-06-14 16:59:38,575 | INFO | Paper Trading Engine Started.
