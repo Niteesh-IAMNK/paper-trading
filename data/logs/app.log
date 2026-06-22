@@ -54,3 +54,9 @@ EMA crossover
 2026-06-14 16:59:32,650 | INFO | All positions squared off.
 2026-06-14 16:59:34,695 | INFO | All positions squared off.
 2026-06-14 16:59:38,575 | INFO | Paper Trading Engine Started.
+2026-06-22 20:31:05,715 | INFO | Paper Trading Engine Started.
+2026-06-22 20:41:57,696 | INFO | Paper Trading Engine Started.
+2026-06-22 20:41:57,696 | ERROR | App Runner Error: name 'fyers' is not defined
+2026-06-22 20:41:59,701 | ERROR | App Runner Error: name 'fyers' is not defined
+2026-06-22 20:42:01,703 | ERROR | App Runner Error: name 'fyers' is not defined
+2026-06-22 20:42:55,088 | INFO | Paper Trading Engine Started.

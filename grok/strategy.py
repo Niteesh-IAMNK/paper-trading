@@ -23,7 +23,7 @@ from datetime import datetime, time
 from typing import List, Dict, Optional
 import logging
 
-from config import StrategyConfig
+from .config import StrategyConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger(__name__)

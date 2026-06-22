@@ -1,11 +1,6 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from shared.app_runner import (
-    PORTFOLIOS,
-    DAY_OPENING_CAPITAL
-)
-
 from shared.daily_pnl import (
     save_daily_pnl
 )
@@ -19,25 +14,34 @@ IST = ZoneInfo(
 )
 
 
-def generate_daily_summary():
+def generate_daily_summary(
+    portfolios,
+    opening_capital
+):
+    """
+    Generates Telegram daily summary
+    and saves daily PnL.
+    """
 
     summary = []
 
     winner = None
     winner_pnl = float("-inf")
 
-    trade_date = datetime.now(
-        IST
-    ).strftime(
-        "%Y-%m-%d"
+    trade_date = (
+        datetime.now(
+            IST
+        ).strftime(
+            "%Y-%m-%d"
+        )
     )
 
     for ai_name, portfolio in (
-        PORTFOLIOS.items()
+        portfolios.items()
     ):
 
         opening = (
-            DAY_OPENING_CAPITAL.get(
+            opening_capital.get(
                 ai_name,
                 500000
             )
@@ -101,7 +105,7 @@ def generate_daily_summary():
             f"Trades: "
             f"{item['trades']}\n"
             f"PnL: ₹"
-            f"{item['pnl']}\n\n"
+            f"{item['pnl']:.2f}\n\n"
         )
 
     if winner:
@@ -109,18 +113,27 @@ def generate_daily_summary():
         message += (
             f"🏆 Winner: "
             f"{winner.upper()} "
-            f"(₹{winner_pnl})"
+            f"(₹{winner_pnl:.2f})"
         )
 
     return message
 
 
-def send_daily_summary():
+def send_daily_summary(
+    portfolios,
+    opening_capital
+):
+    """
+    Sends Telegram daily summary.
+    """
 
     message = (
-        generate_daily_summary()
+        generate_daily_summary(
+            portfolios,
+            opening_capital
+        )
     )
 
     send_message(
         message
-    )   
+    )

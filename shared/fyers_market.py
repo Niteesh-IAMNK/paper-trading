@@ -1,17 +1,4 @@
-import os
-from dotenv import load_dotenv
-from fyers_apiv3 import fyersModel
-
-load_dotenv()
-
-CLIENT_ID = os.getenv("FYERS_CLIENT_ID")
-ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN")
-
-fyers = fyersModel.FyersModel(
-    client_id=CLIENT_ID,
-    token=ACCESS_TOKEN,
-    is_async=False
-)
+from .fyers_auth import get_fyers
 
 
 def get_quotes(symbols: list):
@@ -24,6 +11,8 @@ def get_quotes(symbols: list):
         "NSE:NIFTYBANK-INDEX"
     ]
     """
+
+    fyers = get_fyers()
 
     data = {
         "symbols": ",".join(symbols)

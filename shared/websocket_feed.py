@@ -13,8 +13,12 @@ CLIENT_ID = os.getenv(
     "FYERS_CLIENT_ID"
 )
 
-TOKEN = os.getenv(
-    "FYERS_ACCESS_TOKEN"
+from shared.fyers_token_manager import (
+    get_access_token
+)
+
+access_token = (
+    get_access_token()
 )
 
 ACCESS_TOKEN = (

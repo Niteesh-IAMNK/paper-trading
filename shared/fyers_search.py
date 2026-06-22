@@ -8,15 +8,9 @@ CLIENT_ID = os.getenv(
     "FYERS_CLIENT_ID"
 )
 
-ACCESS_TOKEN = os.getenv(
-    "FYERS_ACCESS_TOKEN"
-)
+from .fyers_auth import get_fyers
 
-fyers = fyersModel.FyersModel(
-    client_id=CLIENT_ID,
-    token=ACCESS_TOKEN,
-    is_async=False
-)
+fyers = get_fyers()
 
 
 def search_symbol(

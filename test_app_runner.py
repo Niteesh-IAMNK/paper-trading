@@ -1,4 +1,4 @@
-from shared.app_runner import (
+from app_runner import (
     start
 )
 

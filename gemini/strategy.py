@@ -6,7 +6,7 @@ Ensures strict defensive programming and capital preservation.
 
 from datetime import datetime, time
 import math
-import config
+from . import config
 
 # In-memory state tracking for indicators and risk limits
 _market_history = []  # Stores dicts: {"price": float, "volume": int, "vwap_num": float, "vwap_den": float}

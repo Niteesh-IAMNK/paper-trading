@@ -1,15 +1,27 @@
 import os
 from dotenv import load_dotenv
 from fyers_apiv3 import fyersModel
+from shared.fyers_token_manager import (
+    get_access_token
+)
 
 load_dotenv()
 
-CLIENT_ID = os.getenv("FYERS_CLIENT_ID")
-SECRET_KEY = os.getenv("FYERS_SECRET_KEY")
-REDIRECT_URI = os.getenv("FYERS_REDIRECT_URI")
+CLIENT_ID = os.getenv(
+    "FYERS_CLIENT_ID"
+)
+
+SECRET_KEY = os.getenv(
+    "FYERS_SECRET_KEY"
+)
+
+REDIRECT_URI = os.getenv(
+    "FYERS_REDIRECT_URI"
+)
 
 
 def get_login_url():
+
     session = fyersModel.SessionModel(
         client_id=CLIENT_ID,
         secret_key=SECRET_KEY,
@@ -20,9 +32,13 @@ def get_login_url():
 
     return session.generate_authcode()
 
-def generate_access_token(auth_code: str):
+
+def generate_access_token(
+    auth_code: str
+):
     """
-    Exchange auth_code for access token.
+    Exchange auth_code
+    for access token.
     """
 
     session = fyersModel.SessionModel(
@@ -33,19 +49,21 @@ def generate_access_token(auth_code: str):
         grant_type="authorization_code"
     )
 
-    session.set_token(auth_code)
+    session.set_token(
+        auth_code
+    )
 
-    response = session.generate_token()
+    return session.generate_token()
 
-    return response
 
 def get_fyers():
     """
-    Returns authenticated FYERS client.
+    Returns authenticated
+    FYERS client.
     """
 
-    access_token = os.getenv(
-        "FYERS_ACCESS_TOKEN"
+    access_token = (
+        get_access_token()
     )
 
     return fyersModel.FyersModel(
