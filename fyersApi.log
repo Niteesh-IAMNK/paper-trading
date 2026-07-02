@@ -8,3 +8,4 @@
 {"level":"ERROR","location":"[get_call:169] fyersModel","message":{"API":"/quotes","Error":{"message":"Please provide valid token","code":-15,"s":"error"}},"timestamp":"2026-06-22 20:31:09,949+0530","service":"FyersAPI"}
 {"level":"ERROR","location":"[get_call:169] fyersModel","message":{"API":"/quotes","Error":{"message":"Please provide valid token","code":-15,"s":"error"}},"timestamp":"2026-06-22 20:31:12,007+0530","service":"FyersAPI"}
 {"level":"ERROR","location":"[get_call:169] fyersModel","message":{"API":"/quotes","Error":{"message":"Please provide valid token","code":-15,"s":"error"}},"timestamp":"2026-06-22 20:31:14,070+0530","service":"FyersAPI"}
+{"level":"ERROR","location":"[get_call:169] fyersModel","message":{"API":"/profile","Error":{"s":"error","code":-8,"message":"Your token has expired. Please generate a token"}},"timestamp":"2026-06-26 09:01:38,513+0530","service":"FyersAPI"}

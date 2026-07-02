@@ -31,3 +31,4 @@
 {"level":"DEBUG","location":"[get_call:163] fyersModel","message":{"Status Code":200,"API":"/quotes"},"timestamp":"2026-06-22 20:43:14,148+0530","service":"FyersAPIRequest"}
 {"level":"DEBUG","location":"[get_call:163] fyersModel","message":{"Status Code":200,"API":"/quotes"},"timestamp":"2026-06-22 20:43:16,263+0530","service":"FyersAPIRequest"}
 {"level":"DEBUG","location":"[get_call:163] fyersModel","message":{"Status Code":200,"API":"/quotes"},"timestamp":"2026-06-22 20:43:18,371+0530","service":"FyersAPIRequest"}
+{"level":"DEBUG","location":"[get_call:163] fyersModel","message":{"Status Code":401,"API":"/profile"},"timestamp":"2026-06-26 09:01:38,511+0530","service":"FyersAPIRequest"}
