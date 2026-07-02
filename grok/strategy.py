@@ -1,26 +1,26 @@
+# strategy.py
 """
 strategy.py
-Production-ready Aggressive Momentum Scalping Strategy for NIFTY Weekly Options.
+NIFTY Weekly Options Momentum Strategy (Standardized v3)
 
-Core Idea:
-- High-frequency intraday momentum scalping using confluence of VWAP + Breakout + RSI + EMA Momentum.
-- Designed for 10-20 trades/day.
-- Accepts slightly higher trade frequency in exchange for more opportunities.
-- Robust risk controls + daily limits.
-- Clean separation between indicators, signals, and position management.
+Objective: Maximize long-term compounded portfolio value over many weeks/months.
+- High-quality confluence entries only (min 3/4 conditions).
+- Dynamic lots: scales with current equity (compounding) + signal strength.
+- Simple premium-based exits when in a position (cut losers early, trail winners).
+- Engine handles: all timings, sessions, square-off, capital, risk validation, position tracking, execution, daily loss limits, counters, etc.
+- Strategy returns ONLY action + lots (for BUY) + symbol + reason. No quantity, no validation, no duplication of global systems.
 
-Live Trading Note (Options):
-- This class works on NIFTY spot/futures 1-min data for signals.
-- On 'long' signal  → Buy nearest ATM/0.5-delta weekly Call option.
-- On 'short' signal → Buy nearest ATM/0.5-delta weekly Put option.
-- Use the bought option's LTP for trailing stop (recommended) or map underlying moves.
-- Position sizing should be based on premium paid (see config).
+Trading instrument: NIFTY Weekly CE or PE only. Intraday.
+
+This version strips all forbidden logic (market timings, trade counters, daily loss enforcement, quantity calc, lot size hardcoding, position state beyond minimal indicator history and simple premium exits).
+
+Backtest is retained for development but uses local lot size for simulation only.
 """
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, time
-from typing import List, Dict, Optional
+from datetime import datetime
+from typing import Optional, Dict, Any
 import logging
 
 from .config import StrategyConfig
@@ -29,19 +29,16 @@ logging.getLogger(__name__).setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-class NiftyAggressiveMomentumScalper:
+class NiftyMomentumScalper:
     def __init__(self, config: StrategyConfig = None):
         self.config = config or StrategyConfig()
-        self.trades_today = 0
-        self.daily_pnl = 0.0
-        self.current_day = None
 
-    # ==================== INDICATORS ====================
+    # ==================== BACKTEST (Development only) ====================
     def add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
-
-        # VWAP (reset daily)
         df["date"] = df.index.date
+
+        # VWAP
         df["tp"] = (df["high"] + df["low"] + df["close"]) / 3
         df["tpv"] = df["tp"] * df["volume"].fillna(0)
         df["cum_tpv"] = df.groupby("date")["tpv"].cumsum()
@@ -55,38 +52,30 @@ class NiftyAggressiveMomentumScalper:
         rs = gain / loss.replace(0, np.nan)
         df["rsi"] = 100 - (100 / (1 + rs))
 
-        # EMAs for momentum
+        # EMAs
         df["ema_fast"] = df["close"].ewm(span=self.config.ema_fast, adjust=False).mean()
         df["ema_slow"] = df["close"].ewm(span=self.config.ema_slow, adjust=False).mean()
 
-        # Breakout levels (Donchian style)
+        # Breakout (Donchian)
         df["hh"] = df["high"].rolling(self.config.breakout_period).max().shift(1)
         df["ll"] = df["low"].rolling(self.config.breakout_period).min().shift(1)
 
-        # ATR
-        high_low = df["high"] - df["low"]
-        high_close = (df["high"] - df["close"].shift()).abs()
-        low_close = (df["low"] - df["close"].shift()).abs()
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        df["atr"] = tr.rolling(self.config.atr_period).mean()
-
         return df.dropna()
 
-    # ==================== SIGNAL GENERATION ====================
     def _get_signal(self, row: pd.Series) -> Optional[str]:
         if any(pd.isna([row.get("vwap"), row.get("rsi"), row.get("ema_fast"), row.get("hh")])):
             return None
 
         long_score = sum([
             row["close"] > row["vwap"],
-            row["rsi"] > 50,
+            row["rsi"] > 53,
             row["ema_fast"] > row["ema_slow"],
             row["close"] > row["hh"],
         ])
 
         short_score = sum([
             row["close"] < row["vwap"],
-            row["rsi"] < 50,
+            row["rsi"] < 47,
             row["ema_fast"] < row["ema_slow"],
             row["close"] < row["ll"],
         ])
@@ -97,407 +86,290 @@ class NiftyAggressiveMomentumScalper:
             return "short"
         return None
 
-    def is_trading_time(self, ts: pd.Timestamp) -> bool:
-        t = ts.time()
-        return time.fromisoformat(self.config.trading_start) <= t <= time.fromisoformat(self.config.trading_end)
-
-    # ==================== BACKTEST ENGINE ====================
-    def backtest(self, df: pd.DataFrame) -> Dict:
+    def backtest(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Backtest for development/validation only.
+        Uses local lot size for P&L simulation (engine uses real current NSE lot size in live).
+        """
+        LOCAL_LOT_SIZE = 65  # Current NSE value for simulation only. Do not use in live path.
         df = self.add_indicators(df)
         if len(df) < 50:
-            return {"error": "Not enough data after indicator calculation"}
+            return {"error": "Insufficient data after indicators"}
 
         position = 0
         entry_price = 0.0
         entry_idx = 0
-        trailing_stop = 0.0
         trades = []
-        equity = self.config.initial_capital
+        equity = 500_000.0
         equity_curve = [equity]
 
         for i in range(len(df)):
             row = df.iloc[i]
-            ts = df.index[i]
-
-            if not self.is_trading_time(ts):
-                continue
-
-            # Daily reset
-            if self.current_day != ts.date():
-                self.current_day = ts.date()
-                self.trades_today = 0
-                self.daily_pnl = 0.0
-
             signal = self._get_signal(row)
 
-            # === Position Management ===
             if position != 0:
-                exit_reason = None
-                hold_minutes = (ts - df.index[entry_idx]).total_seconds() / 60
+                # Simple exit on opposite signal or end (backtest approximation)
+                exit_now = False
+                if (position == 1 and signal == "short") or (position == -1 and signal == "long"):
+                    exit_now = True
+                if i == len(df) - 1:
+                    exit_now = True
 
-                if hold_minutes > self.config.max_hold_minutes:
-                    exit_reason = "time_exit"
-                elif position == 1:
-                    new_trail = row["close"] - row["atr"] * self.config.trail_atr_mult
-                    trailing_stop = max(trailing_stop, new_trail)
-                    if row["close"] < trailing_stop:
-                        exit_reason = "trailing_sl"
-                elif position == -1:
-                    new_trail = row["close"] + row["atr"] * self.config.trail_atr_mult
-                    trailing_stop = min(trailing_stop, new_trail)
-                    if row["close"] > trailing_stop:
-                        exit_reason = "trailing_sl"
-                elif (position == 1 and signal == "short") or (position == -1 and signal == "long"):
-                    exit_reason = "signal_flip"
-
-                if exit_reason:
+                if exit_now:
                     exit_price = row["close"]
-                    pnl = (exit_price - entry_price) * position * self.config.lot_size
+                    pnl = (exit_price - entry_price) * position * LOCAL_LOT_SIZE
                     equity += pnl
-                    self.daily_pnl += pnl
-
                     trades.append({
                         "entry_time": str(df.index[entry_idx]),
-                        "exit_time": str(ts),
+                        "exit_time": str(df.index[i]),
                         "direction": "long" if position == 1 else "short",
                         "entry_price": round(entry_price, 2),
                         "exit_price": round(exit_price, 2),
                         "pnl": round(pnl, 2),
-                        "reason": exit_reason,
-                        "hold_minutes": round(hold_minutes, 1),
                     })
                     position = 0
                     equity_curve.append(equity)
 
-            # === New Entry ===
-            if position == 0 and signal and self.trades_today < self.config.max_trades_per_day:
-                daily_loss_pct = abs(self.daily_pnl) / equity * 100 if equity > 0 else 0
-                if daily_loss_pct < self.config.daily_loss_limit_pct:
-                    position = 1 if signal == "long" else -1
-                    entry_price = row["close"]
-                    entry_idx = i
-                    trailing_stop = entry_price - position * row["atr"] * self.config.trail_atr_mult
-                    self.trades_today += 1
-
-        # Close any remaining position
-        if position != 0 and len(df) > 0:
-            last_row = df.iloc[-1]
-            exit_price = last_row["close"]
-            pnl = (exit_price - entry_price) * position * self.config.lot_size
-            equity += pnl
-            trades.append({
-                "entry_time": str(df.index[entry_idx]),
-                "exit_time": str(df.index[-1]),
-                "direction": "long" if position == 1 else "short",
-                "entry_price": round(entry_price, 2),
-                "exit_price": round(exit_price, 2),
-                "pnl": round(pnl, 2),
-                "reason": "end_of_data",
-                "hold_minutes": round((df.index[-1] - df.index[entry_idx]).total_seconds() / 60, 1),
-            })
-            equity_curve.append(equity)
+            if position == 0 and signal:
+                position = 1 if signal == "long" else -1
+                entry_price = row["close"]
+                entry_idx = i
 
         if not trades:
-            return {"message": "No trades generated. Consider lowering min_score or breakout_period."}
+            return {"message": "No trades. Strategy is selective by design for long-term edge."}
 
         total_pnl = sum(t["pnl"] for t in trades)
-        wins = [t for t in trades if t["pnl"] > 0]
-        win_rate = len(wins) / len(trades) * 100
-        gross_profit = sum(t["pnl"] for t in wins)
+        wins = sum(1 for t in trades if t["pnl"] > 0)
+        win_rate = wins / len(trades) * 100
+        gross_profit = sum(t["pnl"] for t in trades if t["pnl"] > 0)
         gross_loss = abs(sum(t["pnl"] for t in trades if t["pnl"] < 0))
-        profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
+        pf = gross_profit / gross_loss if gross_loss > 0 else float("inf")
 
         return {
             "total_trades": len(trades),
             "total_pnl": round(total_pnl, 2),
             "win_rate": round(win_rate, 2),
-            "profit_factor": round(profit_factor, 2),
-            "avg_trade_pnl": round(total_pnl / len(trades), 2),
+            "profit_factor": round(pf, 2),
+            "final_equity": round(equity, 2),
             "trades": trades,
-            "equity_curve": equity_curve,
-            "config": self.config.__dict__,
+            "note": "Backtest uses spot approximation + fixed lot for simulation. Live uses real option premiums + dynamic lots + engine risk controls."
         }
 
-
-# ==================== LIVE PAPER TRADING INTERFACE ====================
-
-from collections import deque
-from datetime import datetime
+    # ==================== LIVE SIGNAL GENERATOR ====================
+    # Minimal state only for indicators (deques) + daily vwap reset + simple premium trailing for exits.
+    # No trade counters, no daily loss checks, no market time logic, no quantity calc, no lot size.
 
 _LIVE_CONFIG = StrategyConfig()
-_LIVE_STATE = {
-    "nifty_history": deque(maxlen=60),
-    "high_history": deque(maxlen=60),
-    "low_history": deque(maxlen=60),
+_LIVE_STATE: Dict[str, Any] = {
+    "nifty_history": [],
+    "high_history": [],
+    "low_history": [],
     "ema_fast": None,
     "ema_slow": None,
     "vwap_num": 0.0,
     "vwap_den": 0.0,
-    "highest_option_price": None,
-    "trades_today": 0,
     "current_date": None,
-    "daily_pnl": 0.0,
+    "highest_option_price": None,
 }
 
 
-def _hold(reason: str) -> dict:
-    return {
-        "action": "HOLD",
-        "symbol": "",
-        "quantity": 0,
-        "reason": reason[:250],
-    }
-
-
-def _safe_float(value):
+def _safe_float(v):
     try:
-        if value is None:
-            return None
-        return float(value)
+        return float(v) if v is not None else None
     except Exception:
         return None
 
 
-def _safe_int(value):
+def _safe_int(v):
     try:
-        return max(0, int(value))
+        return max(0, int(v)) if v is not None else 0
     except Exception:
         return 0
 
 
-def _parse_time(snapshot: dict):
-    value = snapshot.get("time")
-    if not value:
+def _parse_time(snapshot: dict) -> Optional[datetime]:
+    val = snapshot.get("time")
+    if not val:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(str(val).replace("Z", "+00:00"))
     except Exception:
         return None
 
 
-def _ema(previous, price, period):
-    alpha = 2 / (period + 1)
-    if previous is None:
+def _ema(prev, price, period):
+    if prev is None:
         return price
-    return previous + alpha * (price - previous)
+    alpha = 2.0 / (period + 1)
+    return prev + alpha * (price - prev)
 
 
-def _rsi(prices):
-    if len(prices) < _LIVE_CONFIG.rsi_period + 1:
+def _rsi(prices, period):
+    if len(prices) < period + 1:
         return None
-
-    gains = []
-    losses = []
-    values = list(prices)
-
-    for index in range(1, len(values)):
-        change = values[index] - values[index - 1]
-        gains.append(max(change, 0))
-        losses.append(max(-change, 0))
-
-    avg_gain = sum(gains[-_LIVE_CONFIG.rsi_period:]) / _LIVE_CONFIG.rsi_period
-    avg_loss = sum(losses[-_LIVE_CONFIG.rsi_period:]) / _LIVE_CONFIG.rsi_period
-
+    vals = list(prices)
+    gains = [max(vals[i] - vals[i-1], 0) for i in range(1, len(vals))]
+    losses = [max(vals[i-1] - vals[i], 0) for i in range(1, len(vals))]
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
     if avg_loss == 0:
         return 100.0
-
-    rs = avg_gain / avg_loss
-    return 100.0 - (100.0 / (1.0 + rs))
+    return 100.0 - (100.0 / (1.0 + (avg_gain / avg_loss)))
 
 
-def _momentum_signal(nifty, rsi, ema_fast, ema_slow, hh, ll):
-    if any(value is None for value in (nifty, rsi, ema_fast, ema_slow, hh, ll)):
-        return None
+def _get_signal_and_score(nifty, rsi, ema_fast, ema_slow, hh, ll) -> tuple:
+    if any(x is None for x in (nifty, rsi, ema_fast, ema_slow, hh, ll)):
+        return None, 0
+
+    vwap = _LIVE_STATE["vwap_num"] / max(_LIVE_STATE["vwap_den"], 1)
 
     long_score = sum([
-        nifty > _LIVE_STATE["vwap_num"] / max(_LIVE_STATE["vwap_den"], 1),
-        rsi > 50,
+        nifty > vwap,
+        rsi > 53,
         ema_fast > ema_slow,
         nifty > hh,
     ])
-
     short_score = sum([
-        nifty < _LIVE_STATE["vwap_num"] / max(_LIVE_STATE["vwap_den"], 1),
-        rsi < 50,
+        nifty < vwap,
+        rsi < 47,
         ema_fast < ema_slow,
         nifty < ll,
     ])
 
     if long_score >= _LIVE_CONFIG.min_score_long:
-        return "long"
+        return "long", long_score
     if short_score >= _LIVE_CONFIG.min_score_short:
-        return "short"
-    return None
-
-
-def _calculate_quantity(cash, premium):
-    if not cash or not premium or premium <= 0:
-        return 0
-
-    risk_capital = cash * (_LIVE_CONFIG.option_risk_per_trade_pct / 100.0)
-    lots = int(risk_capital // (premium * _LIVE_CONFIG.lot_size))
-    return max(0, lots * _LIVE_CONFIG.lot_size)
+        return "short", short_score
+    return None, 0
 
 
 def generate_signal(snapshot: dict) -> dict:
     """
-    Live paper-trading signal generator.
-
-    Matches the public interface used by GPT and Gemini strategies.
+    Returns trading decision only.
+    Format:
+      HOLD -> {"action": "HOLD", "reason": str}
+      BUY  -> {"action": "BUY", "symbol": str, "lots": int, "reason": str, "confidence": float (optional)}
+      SELL -> {"action": "SELL", "symbol": str, "reason": str}   # engine closes full position
     """
     try:
         if not isinstance(snapshot, dict):
-            return _hold("Invalid snapshot")
+            return {"action": "HOLD", "reason": "Invalid snapshot"}
 
         now = _parse_time(snapshot)
         nifty = _safe_float(snapshot.get("nifty"))
         if nifty is None or nifty <= 0:
-            return _hold("Invalid NIFTY")
+            return {"action": "HOLD", "reason": "No valid NIFTY price"}
 
+        # Daily reset for VWAP accumulator (indicator correctness only)
         if now and _LIVE_STATE["current_date"] != now.date():
             _LIVE_STATE["current_date"] = now.date()
-            _LIVE_STATE["trades_today"] = 0
-            _LIVE_STATE["daily_pnl"] = 0.0
             _LIVE_STATE["vwap_num"] = 0.0
             _LIVE_STATE["vwap_den"] = 0.0
             _LIVE_STATE["highest_option_price"] = None
 
+        # Update indicator state
         _LIVE_STATE["nifty_history"].append(nifty)
+        if len(_LIVE_STATE["nifty_history"]) > 60:
+            _LIVE_STATE["nifty_history"].pop(0)
         _LIVE_STATE["high_history"].append(nifty)
+        if len(_LIVE_STATE["high_history"]) > 60:
+            _LIVE_STATE["high_history"].pop(0)
         _LIVE_STATE["low_history"].append(nifty)
+        if len(_LIVE_STATE["low_history"]) > 60:
+            _LIVE_STATE["low_history"].pop(0)
+
         _LIVE_STATE["vwap_num"] += nifty
         _LIVE_STATE["vwap_den"] += 1
 
-        _LIVE_STATE["ema_fast"] = _ema(
-            _LIVE_STATE["ema_fast"],
-            nifty,
-            _LIVE_CONFIG.ema_fast,
-        )
-        _LIVE_STATE["ema_slow"] = _ema(
-            _LIVE_STATE["ema_slow"],
-            nifty,
-            _LIVE_CONFIG.ema_slow,
-        )
+        _LIVE_STATE["ema_fast"] = _ema(_LIVE_STATE["ema_fast"], nifty, _LIVE_CONFIG.ema_fast)
+        _LIVE_STATE["ema_slow"] = _ema(_LIVE_STATE["ema_slow"], nifty, _LIVE_CONFIG.ema_slow)
 
-        if now:
-            current_time = now.strftime("%H:%M")
-            if (
-                current_time < _LIVE_CONFIG.trading_start
-                or current_time > _LIVE_CONFIG.trading_end
-            ):
-                return _hold("Outside trading window")
-
-        equity = _safe_float(snapshot.get("equity")) or 0.0
-        if equity > 0:
-            daily_loss_pct = abs(min(_LIVE_STATE["daily_pnl"], 0)) / equity * 100
-            if daily_loss_pct >= _LIVE_CONFIG.daily_loss_limit_pct:
-                return _hold("Daily loss limit reached")
-
-        if _LIVE_STATE["trades_today"] >= _LIVE_CONFIG.max_trades_per_day:
-            return _hold("Trade limit reached")
-
-        if len(_LIVE_STATE["nifty_history"]) < _LIVE_CONFIG.breakout_period + 2:
-            return _hold("Building indicators")
-
-        rsi = _rsi(_LIVE_STATE["nifty_history"])
-        hh = max(list(_LIVE_STATE["high_history"])[-_LIVE_CONFIG.breakout_period - 1:-1])
-        ll = min(list(_LIVE_STATE["low_history"])[-_LIVE_CONFIG.breakout_period - 1:-1])
-
+        # If engine reports we already have a position, decide simple premium-based exit or hold
         if snapshot.get("has_position"):
-            position = snapshot.get("position") or {}
-            symbol = position.get("symbol")
-            quantity = _safe_int(position.get("quantity"))
-            entry = _safe_float(position.get("entry_price"))
-
-            if not symbol or quantity <= 0 or entry is None:
-                return _hold("Corrupt position")
-
+            pos = snapshot.get("position") or {}
+            symbol = pos.get("symbol")
+            entry = _safe_float(pos.get("entry_price"))
             current = None
+
             if symbol == snapshot.get("ce_symbol"):
                 current = _safe_float(snapshot.get("ce_price"))
             elif symbol == snapshot.get("pe_symbol"):
                 current = _safe_float(snapshot.get("pe_price"))
 
-            if current is None:
-                return _hold("No option price")
+            if current is None or entry is None or current <= 0:
+                return {"action": "HOLD", "reason": "Position data incomplete"}
 
+            # Update peak for trailing
+            if _LIVE_STATE["highest_option_price"] is None or current > _LIVE_STATE["highest_option_price"]:
+                _LIVE_STATE["highest_option_price"] = current
+
+            pnl_pct = (current - entry) / entry * 100.0
             highest = _LIVE_STATE["highest_option_price"]
-            if highest is None or current > highest:
-                highest = current
-                _LIVE_STATE["highest_option_price"] = highest
 
-            pnl_pct = (current - entry) / entry
-            trail_drop = highest * (1 - (_LIVE_CONFIG.trail_atr_mult / 100))
+            # Premium-based exits only (no time, no counters)
+            if pnl_pct <= -_LIVE_CONFIG.option_sl_pct:
+                _LIVE_STATE["highest_option_price"] = None
+                return {"action": "SELL", "symbol": symbol, "reason": f"SL hit ({pnl_pct:.1f}%)"}
+            if pnl_pct >= _LIVE_CONFIG.option_target_pct:
+                _LIVE_STATE["highest_option_price"] = None
+                return {"action": "SELL", "symbol": symbol, "reason": f"Target hit ({pnl_pct:.1f}%)"}
 
-            if pnl_pct <= -0.08:
-                reason = "Stop Loss"
-            elif pnl_pct >= 0.12:
-                reason = "Target Hit"
-            elif current <= trail_drop:
-                reason = "Trailing Stop"
-            else:
-                return _hold("Managing position")
+            trail_level = highest * (1 - _LIVE_CONFIG.option_trail_pct / 100.0)
+            if current <= trail_level:
+                _LIVE_STATE["highest_option_price"] = None
+                return {"action": "SELL", "symbol": symbol, "reason": f"Trailing stop ({_LIVE_CONFIG.option_trail_pct}% from peak)"}
 
-            _LIVE_STATE["trades_today"] += 1
-            return {
-                "action": "SELL",
-                "symbol": symbol,
-                "quantity": quantity,
-                "reason": reason,
-            }
+            return {"action": "HOLD", "reason": f"Managing | PnL {pnl_pct:.1f}%"}
 
-        signal = _momentum_signal(
-            nifty,
-            rsi,
-            _LIVE_STATE["ema_fast"],
-            _LIVE_STATE["ema_slow"],
-            hh,
-            ll,
-        )
+        # No position: look for high-quality entry
+        if len(_LIVE_STATE["nifty_history"]) < _LIVE_CONFIG.breakout_period + 2:
+            return {"action": "HOLD", "reason": "Warming up indicators"}
+
+        rsi = _rsi(_LIVE_STATE["nifty_history"], _LIVE_CONFIG.rsi_period)
+        hh = max(_LIVE_STATE["high_history"][-_LIVE_CONFIG.breakout_period-1:-1]) if len(_LIVE_STATE["high_history"]) > _LIVE_CONFIG.breakout_period else None
+        ll = min(_LIVE_STATE["low_history"][-_LIVE_CONFIG.breakout_period-1:-1]) if len(_LIVE_STATE["low_history"]) > _LIVE_CONFIG.breakout_period else None
+
+        signal, score = _get_signal_and_score(nifty, rsi, _LIVE_STATE["ema_fast"], _LIVE_STATE["ema_slow"], hh, ll)
 
         if not signal:
-            return _hold("No momentum setup")
+            return {"action": "HOLD", "reason": "No 3+ confluence momentum setup"}
 
+        # Choose option
         if signal == "long":
             symbol = snapshot.get("ce_symbol")
             premium = _safe_float(snapshot.get("ce_price"))
-            reason = "Aggressive bullish momentum"
         else:
             symbol = snapshot.get("pe_symbol")
             premium = _safe_float(snapshot.get("pe_price"))
-            reason = "Aggressive bearish momentum"
 
         if not symbol or premium is None or premium <= 0:
-            return _hold("Invalid ATM option")
+            return {"action": "HOLD", "reason": "No valid option premium/symbol"}
 
-        quantity = _calculate_quantity(snapshot.get("cash"), premium)
-        if quantity <= 0:
-            return _hold("Insufficient cash")
+        # Dynamic lots: scale with equity (for compounding) + signal strength
+        equity = _safe_float(snapshot.get("equity")) or 500_000.0
+        scale = max(0.4, min(4.0, equity / 500_000.0))
+        extra = max(0, score - _LIVE_CONFIG.min_score_long)
+        lots = int((_LIVE_CONFIG.base_lots + extra * _LIVE_CONFIG.lots_per_extra_confluence) * scale)
+        lots = max(1, min(_LIVE_CONFIG.max_lots, lots))
 
         _LIVE_STATE["highest_option_price"] = premium
-        _LIVE_STATE["trades_today"] += 1
+
+        confidence = round(min(0.95, 0.6 + (score - 2) * 0.12), 2)
 
         return {
             "action": "BUY",
             "symbol": symbol,
-            "quantity": quantity,
-            "reason": reason,
+            "lots": lots,
+            "reason": f"{signal.upper()} momentum (score {score}/4) | equity_scale {scale:.2f}x",
+            "confidence": confidence
         }
 
-    except Exception:
-        return _hold("Internal protection")
+    except Exception as e:
+        return {"action": "HOLD", "reason": f"Protection: {str(e)[:80]}"}
 
 
-# ==================== EXAMPLE USAGE ====================
+# Example usage (development)
 if __name__ == "__main__":
-    # Example: Load your 1-minute NIFTY data
-    # df = pd.read_parquet("nifty_1min_2025.parquet")  # Must have columns: open, high, low, close, volume
-    # df.index = pd.to_datetime(df.index)
-
-    config = StrategyConfig(max_trades_per_day=15, trail_atr_mult=1.1, max_hold_minutes=20)
-    strategy = NiftyAggressiveMomentumScalper(config)
-
-    # results = strategy.backtest(df)
-    # print(results["total_pnl"], results["win_rate"])
-
-    print("Strategy class loaded successfully. Use with your 1-min NIFTY dataframe.")
+    print("Standardized momentum strategy loaded.")
+    print("Live generate_signal ready. Returns BUY/SELL/HOLD + lots (BUY) + symbol + reason.")
+    print("Backtest available for offline validation.")

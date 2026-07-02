@@ -1,41 +1,34 @@
+# config.py
 """
 config.py
-Central configuration for the Aggressive NIFTY Weekly Options Momentum Scalper.
-Edit these values to control aggressiveness vs robustness.
+Minimal configuration for NIFTY Weekly Options momentum strategy.
+
+Only values that genuinely need to be tunable for long-term portfolio growth are here.
+The engine handles all session, risk, capital, execution, and position logic.
+Strategy only decides entries (direction + lots) and simple premium-based exits.
 """
 
 from dataclasses import dataclass
-from datetime import time
 
 
 @dataclass
 class StrategyConfig:
-    # ===================== GENERAL =====================
-    initial_capital: float = 500_000.0          # Starting capital for backtesting
-    lot_size: int = 25                          # NIFTY lot size (standard)
-
-    # ===================== INDICATORS =====================
+    # Indicator parameters (core to signal quality)
     rsi_period: int = 14
-    ema_fast: int = 9                           # Fast EMA for momentum
-    ema_slow: int = 21                          # Slow EMA for momentum
-    breakout_period: int = 12                   # Shorter = more aggressive breakouts
-    atr_period: int = 14
+    ema_fast: int = 9
+    ema_slow: int = 21
+    breakout_period: int = 12          # Donchian breakout lookback
 
-    # ===================== SIGNAL LOGIC (AGGRESSIVE) =====================
-    min_score_long: int = 2                     # Enter long if ≥ N conditions true (out of 4)
-    min_score_short: int = 2                    # Enter short if ≥ N conditions true
+    # Signal quality threshold (higher = fewer but cleaner trades for compounding)
+    min_score_long: int = 3
+    min_score_short: int = 3
 
-    # ===================== RISK & EXIT MANAGEMENT =====================
-    trail_atr_mult: float = 1.2                 # ATR multiplier for trailing stop
-    max_hold_minutes: int = 25                  # Hard time-based exit (theta protection)
-    max_trades_per_day: int = 15                # Hard cap on trade frequency
-    daily_loss_limit_pct: float = 2.0           # Stop trading for the day if loss exceeds this %
+    # Position sizing (scaled by signal strength + current equity)
+    base_lots: int = 2                 # Starting lots at ~₹5L equity on minimum valid signal
+    lots_per_extra_confluence: int = 2 # Aggressive scaling on very strong setups (4/4)
+    max_lots: int = 15                 # Safety cap even on hot streaks / large equity
 
-    # ===================== TRADING HOURS (IST) =====================
-    trading_start: str = "09:15"
-    trading_end: str = "15:00"
-
-    # ===================== OPTIONS SPECIFIC (for live) =====================
-    # These are used only as guidance in live execution layer
-    option_risk_per_trade_pct: float = 0.5      # Risk 0.5% of capital per trade on premium
-    preferred_delta: float = 0.50               # Target ~ATM options
+    # Simple premium-based exit rules for when in position (protects compounding)
+    option_sl_pct: float = 18.0        # Exit losing option position early
+    option_target_pct: float = 35.0    # Lock in gains on momentum bursts
+    option_trail_pct: float = 12.0     # Trail winners; exit on pullback from peak premium

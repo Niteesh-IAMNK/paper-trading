@@ -1,56 +1,35 @@
-# config.py
-
 """
-Conservative Institutional-Style ATM NIFTY Weekly Options Strategy
-Focus:
-1. Capital Preservation
-2. Risk-Adjusted Returns
-3. Low Drawdown
-4. Low Trading Frequency (2-5 trades/day)
+Pure decision configuration for the GPT NIFTY weekly-options strategy.
+
+The trading engine owns market sessions, portfolio checks, lot-size conversion,
+execution, position management, and risk enforcement. These values only shape
+the strategy's directional edge model and requested lot count.
 """
 
-# Capital Management
-INITIAL_CAPITAL = 500_000
-MAX_CAPITAL_PER_TRADE = 0.10  # Deploy only 10% of cash
-LOT_SIZE = 75                 # Update if NSE revises
-
-# Trading Window
-ANALYSIS_START = "09:15:00"
-TRADING_START = "10:30:00"
-NO_NEW_ENTRY_AFTER = "14:45:00"
-AUTO_SQUARE_OFF = "15:20:00"
-
-# Indicators
-FAST_EMA = 9
-SLOW_EMA = 21
+# Indicator memory
+MAX_HISTORY = 260
+FAST_EMA = 8
+MID_EMA = 21
+SLOW_EMA = 55
 RSI_PERIOD = 14
-MOMENTUM_LOOKBACK = 5
+ATR_PERIOD = 14
+BREAKOUT_LOOKBACK = 24
+MOMENTUM_LOOKBACK = 9
+OPTION_MOMENTUM_LOOKBACK = 4
 
-# Entry Filters
-RSI_BULL_MIN = 55
-RSI_BULL_MAX = 70
-RSI_BEAR_MIN = 30
-RSI_BEAR_MAX = 45
+# Edge filters
+MIN_EDGE_SCORE = 3.05
+MIN_ABS_MOMENTUM = 0.0016
+MIN_EMA_SPREAD = 0.00055
+MIN_ATR_PCT = 0.00018
+MAX_ATR_PCT = 0.0075
+OPTION_CONFIRMATION_MOVE = 0.018
+OPTION_MIN_PREMIUM = 15
 
-MIN_MOMENTUM = 0.0025  # 0.25%
-MIN_EMA_SEPARATION = 0.001  # 0.10%
-
-# No Trade Zone
-NO_TRADE_RSI_LOW = 45
-NO_TRADE_RSI_HIGH = 55
-LUNCH_START = "11:45:00"
-LUNCH_END = "12:30:00"
-
-# Risk Management
-STOP_LOSS_PCT = 0.25
-TARGET_PCT = 0.40
-TRAILING_STOP_PCT = 0.15
-
-# Trading Controls
-COOLDOWN_SECONDS = 300
-MAX_TRADES_PER_DAY = 5
-MAX_CONSECUTIVE_LOSSES = 3
-MAX_DAILY_DRAWDOWN_PCT = 0.05
-
-# History
-MAX_HISTORY = 500
+# Compounding-aware lot intent
+REFERENCE_EQUITY = 500_000
+BASE_LOTS = 2
+MAX_LOTS = 300
+MEDIUM_EDGE_MULTIPLIER = 1.7
+HIGH_EDGE_MULTIPLIER = 2.9
+EXTREME_EDGE_MULTIPLIER = 4.6
