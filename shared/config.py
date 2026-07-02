@@ -9,9 +9,18 @@ MAX_POSITIONS = 1
 BROKERAGE = 0
 SLIPPAGE = 0
 
-MARKET_OPEN = "09:15:00"
-MARKET_CLOSE = "15:30:00"
-AUTO_SQUARE_OFF = "15:20:00"
+# NIFTY weekly options lot size (exchange standard)
+LOT_SIZE = 65
+DEFAULT_LOTS = 1
+
+# Trading day schedule (IST)
+MARKET_OPEN = "09:15:00"       # exchange open
+ANALYSIS_END = "10:30:00"      # trading session begins
+TRADING_STOP = "15:20:00"      # stop trading; square-off starts
+MARKET_CLOSE = "15:30:00"      # exchange close; daily summary follows
+
+# Backward-compatible alias used elsewhere in the project
+AUTO_SQUARE_OFF = TRADING_STOP
 
 TIMEZONE = "Asia/Kolkata"
 DATABASE_PATH = "../data/trades.db"

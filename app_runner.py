@@ -1,4 +1,5 @@
 
+import sys
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -30,16 +31,6 @@ from shared.ai_runner import (
     get_signal
 )
 
-from shared.trading_session import (
-    is_analysis_time,
-    is_trading_time,
-    is_square_off_time
-)
-
-from shared.summary_session import (
-    is_summary_time
-)
-
 from shared.daily_summary import (
     send_daily_summary
 )
@@ -51,6 +42,18 @@ from shared.portfolio import (
 from shared.logger import (
     log_info,
     log_error
+)
+
+from shared.engine_scheduler import (
+    SESSION_BEFORE_MARKET,
+    SESSION_ANALYSIS,
+    SESSION_TRADING,
+    SESSION_SQUARE_OFF,
+    SESSION_DAILY_SUMMARY,
+    SESSION_SHUTDOWN,
+    compute_sleep_seconds,
+    get_session,
+    should_fetch_market_data,
 )
 
 IST = ZoneInfo(
@@ -71,6 +74,7 @@ DAY_OPENING_CAPITAL = {
 
 SQUARE_OFF_DONE = False
 SUMMARY_DONE = False
+WAITING_LOGGED = False
 
 LAST_RESET_DATE = (
     datetime.now(
@@ -318,84 +322,109 @@ def summary_cycle():
     )
 
 
-def run_cycle():
+def _prepare_market_context():
+    refresh_indices()
+    begin_snapshot_cycle()
+    return get_shared_market_context()
 
+
+def _run_active_session(session, shared_context=None):
+    """
+    Run work for the current active market session.
+    """
     global LAST_RESET_DATE
 
-    try:
+    today = datetime.now(IST).date()
 
-        refresh_indices()
-        begin_snapshot_cycle()
-        shared_context = get_shared_market_context()
+    if today != LAST_RESET_DATE:
+        reset_daily_flags(today)
 
-        market = (
-            get_market()
-        )
+    if shared_context is None:
+        shared_context = _prepare_market_context()
 
-        today = (
-            datetime.now(
-                IST
-            ).date()
-        )
+    market = get_market()
 
-        if (
-            today !=
-            LAST_RESET_DATE
-        ):
-            reset_daily_flags(
-                today
-            )
+    if session == SESSION_ANALYSIS:
+        log_info("Analysis session running.")
+        analysis_cycle(shared_context)
+        return
 
-        if (
-            is_analysis_time()
-        ):
-            analysis_cycle(shared_context)
-            return
+    if session == SESSION_TRADING:
+        trading_cycle(market, shared_context)
+        return
 
-        if (
-            is_trading_time()
-        ):
-            trading_cycle(
-                market,
-                shared_context,
-            )
-            return
+    if session == SESSION_SQUARE_OFF:
+        log_info("Square-off session running.")
+        square_off_cycle(market, shared_context)
+        return
 
-        if (
-            is_square_off_time()
-        ):
-            square_off_cycle(
-                market,
-                shared_context,
-            )
-            return
+    if session == SESSION_DAILY_SUMMARY:
+        log_info("Daily summary session running.")
+        summary_cycle()
+        return
 
-        if (
-            is_summary_time()
-        ):
-            summary_cycle()
-            return
 
-    except Exception as e:
-
-        log_error(
-            f"App Runner Error: {e}"
-        )
+def _graceful_shutdown():
+    log_info("Trading day completed successfully.")
+    log_info("Shutting down.")
+    sys.exit(0)
 
 
 def start():
+    """
+    Run one complete trading day, then exit.
 
-    log_info(
-        "Paper Trading Engine Started."
-    )
+    Lifecycle:
+        authenticate → wait for market → analysis → trading →
+        square-off → daily summary → shutdown
+    """
+    global WAITING_LOGGED
+    global SQUARE_OFF_DONE
+    global SUMMARY_DONE
+
+    log_info("Paper Trading Engine Started.")
 
     while True:
+        now = datetime.now(IST)
+        session = get_session(now)
 
-        run_cycle()
+        if session == SESSION_SHUTDOWN:
+            if not SUMMARY_DONE:
+                summary_cycle()
+            break
 
-        time.sleep(
-            2
-        )
+        if session == SESSION_BEFORE_MARKET:
+            if not WAITING_LOGGED:
+                log_info("Waiting for market open...")
+                WAITING_LOGGED = True
+            time.sleep(compute_sleep_seconds(session, now))
+            continue
+
+        WAITING_LOGGED = False
+
+        if should_fetch_market_data(session):
+            shared_context = _prepare_market_context()
+        else:
+            shared_context = None
+
+        if session == SESSION_ANALYSIS:
+            _run_active_session(session, shared_context)
+
+        elif session == SESSION_TRADING:
+            _run_active_session(session, shared_context)
+
+        elif session == SESSION_SQUARE_OFF:
+            if not SQUARE_OFF_DONE:
+                _run_active_session(session, shared_context)
+
+        elif session == SESSION_DAILY_SUMMARY:
+            if not SUMMARY_DONE:
+                _run_active_session(session, shared_context)
+                break
+
+        time.sleep(compute_sleep_seconds(session, now))
+
+    _graceful_shutdown()
 
 
 if __name__ == "__main__":
