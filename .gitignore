@@ -1,0 +1,19 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Secrets
+.env
+fyers_token.json
+
+# Logs
+*.log
+data/logs/
+
+# IDE
+.vscode/
+.idea/
