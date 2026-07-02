@@ -9,12 +9,20 @@ MAX_POSITIONS = 1
 BROKERAGE = 0
 SLIPPAGE = 0
 
-MARKET_OPEN = "09:15:00"
-MARKET_CLOSE = "15:30:00"
-AUTO_SQUARE_OFF = "15:20:00"
+# NIFTY weekly options — single source of truth for the whole project
+LOT_SIZE = 65
+DEFAULT_LOTS = 1
+
+# Trading day schedule (IST)
+MARKET_OPEN = "09:15:00"       # exchange open
+ANALYSIS_END = "10:30:00"      # trading session begins
+TRADING_STOP = "15:20:00"      # stop trading; square-off starts
+MARKET_CLOSE = "15:30:00"      # exchange close; daily summary follows
+
+AUTO_SQUARE_OFF = TRADING_STOP
 
 TIMEZONE = "Asia/Kolkata"
-DATABASE_PATH = "../data/trades.db"
+DATABASE_PATH = "data/trades.db"
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
