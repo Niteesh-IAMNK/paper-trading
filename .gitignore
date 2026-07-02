@@ -13,6 +13,10 @@ fyers_token.json
 # Logs
 *.log
 data/logs/
+logs/
+
+# FYERS auth browser profile
+profiles/fyers/
 
 # IDE
 .vscode/

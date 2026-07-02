@@ -1,9 +1,7 @@
 import os
+
 from dotenv import load_dotenv
 from fyers_apiv3 import fyersModel
-from shared.fyers_token_manager import (
-    get_access_token
-)
 
 load_dotenv()
 
@@ -62,9 +60,9 @@ def get_fyers():
     FYERS client.
     """
 
-    access_token = (
-        get_access_token()
-    )
+    from auth_helper import ensure_valid_token
+
+    access_token = ensure_valid_token()
 
     return fyersModel.FyersModel(
         client_id=CLIENT_ID,
