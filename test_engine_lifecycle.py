@@ -96,6 +96,54 @@ def test_lot_log_format():
     assert "195" in text
 
 
+def test_load_portfolio_restores_saved_equity(monkeypatch, tmp_path):
+    import sqlite3
+
+    import shared.database as database
+    from shared.database import save_portfolio
+    from shared.portfolio import create_portfolio, load_portfolio
+
+    db_path = tmp_path / "trades.db"
+    monkeypatch.setattr(database, "DB_PATH", db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE portfolios (
+            ai_name TEXT PRIMARY KEY,
+            cash REAL NOT NULL,
+            realized_pnl REAL DEFAULT 0,
+            unrealized_pnl REAL DEFAULT 0,
+            equity REAL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ai_name TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            entry_price REAL NOT NULL,
+            entry_time TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    portfolio = create_portfolio("gpt")
+    portfolio.cash = 620000
+    portfolio.equity = 620000
+    save_portfolio(portfolio)
+
+    reloaded = load_portfolio("gpt")
+    assert reloaded.cash == 620000
+    assert reloaded.equity == 620000
+
+
 if __name__ == "__main__":
     tests = [
         test_centralized_lot_size,
@@ -109,6 +157,7 @@ if __name__ == "__main__":
         test_no_market_fetch_before_open,
         test_pre_market_sleep_is_efficient,
         test_lot_log_format,
+        test_load_portfolio_restores_saved_equity,
     ]
 
     for test in tests:

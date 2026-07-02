@@ -36,7 +36,7 @@ from shared.daily_summary import (
 )
 
 from shared.portfolio import (
-    create_portfolio
+    load_portfolio
 )
 
 from shared.logger import (
@@ -57,22 +57,21 @@ from shared.engine_scheduler import (
 )
 
 from shared.signal_adapter import prepare_execution_signal
-from shared.config import INITIAL_CAPITAL
 
 IST = ZoneInfo(
     "Asia/Kolkata"
 )
 
+AI_NAMES = ("gpt", "gemini", "grok")
+
 PORTFOLIOS = {
-    "gpt": create_portfolio("gpt"),
-    "gemini": create_portfolio("gemini"),
-    "grok": create_portfolio("grok")
+    ai_name: load_portfolio(ai_name)
+    for ai_name in AI_NAMES
 }
 
 DAY_OPENING_CAPITAL = {
-    "gpt": INITIAL_CAPITAL,
-    "gemini": INITIAL_CAPITAL,
-    "grok": INITIAL_CAPITAL,
+    ai_name: portfolio.equity
+    for ai_name, portfolio in PORTFOLIOS.items()
 }
 
 SQUARE_OFF_DONE = False
