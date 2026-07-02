@@ -13,7 +13,9 @@ from shared.market_data import (
 )
 
 from shared.snapshot import (
-    build_snapshot
+    begin_snapshot_cycle,
+    build_snapshot,
+    get_shared_market_context,
 )
 
 from shared.trade_executor import (
@@ -143,7 +145,7 @@ def reset_daily_flags(
     )
 
 
-def analysis_cycle():
+def analysis_cycle(shared_context):
     """
     Warm up indicators.
     """
@@ -155,7 +157,8 @@ def analysis_cycle():
 
         snapshot = (
             build_snapshot(
-                portfolio
+                portfolio,
+                shared_context,
             )
         )
 
@@ -170,7 +173,8 @@ def analysis_cycle():
 
 
 def trading_cycle(
-    market
+    market,
+    shared_context,
 ):
     """
     Execute trading signals.
@@ -181,46 +185,54 @@ def trading_cycle(
         portfolio
     ) in PORTFOLIOS.items():
 
-        snapshot = (
-            build_snapshot(
-                portfolio
+        try:
+            snapshot = (
+                build_snapshot(
+                    portfolio,
+                    shared_context,
+                )
             )
-        )
 
-        signal = (
-            get_signal(
-                ai_name,
-                snapshot
+            signal = (
+                get_signal(
+                    ai_name,
+                    snapshot
+                )
             )
-        )
 
-        if not signal:
-            continue
+            if not signal:
+                continue
 
-        symbol = signal.get(
-            "symbol"
-        )
-
-        price = (
-            get_trade_price(
-                market,
-                snapshot,
-                symbol
+            symbol = signal.get(
+                "symbol"
             )
-        )
 
-        if price is None:
-            continue
+            price = (
+                get_trade_price(
+                    market,
+                    snapshot,
+                    symbol
+                )
+            )
 
-        execute_signal(
-            portfolio,
-            signal,
-            price
-        )
+            if price is None:
+                continue
+
+            execute_signal(
+                portfolio,
+                signal,
+                price
+            )
+
+        except Exception as exc:
+            log_error(
+                f"{ai_name.upper()} trading cycle error: {exc}"
+            )
 
 
 def square_off_cycle(
-    market
+    market,
+    shared_context,
 ):
     """
     Square off all positions.
@@ -242,7 +254,8 @@ def square_off_cycle(
 
         snapshot = (
             build_snapshot(
-                portfolio
+                portfolio,
+                shared_context,
             )
         )
 
@@ -312,6 +325,8 @@ def run_cycle():
     try:
 
         refresh_indices()
+        begin_snapshot_cycle()
+        shared_context = get_shared_market_context()
 
         market = (
             get_market()
@@ -334,14 +349,15 @@ def run_cycle():
         if (
             is_analysis_time()
         ):
-            analysis_cycle()
+            analysis_cycle(shared_context)
             return
 
         if (
             is_trading_time()
         ):
             trading_cycle(
-                market
+                market,
+                shared_context,
             )
             return
 
@@ -349,7 +365,8 @@ def run_cycle():
             is_square_off_time()
         ):
             square_off_cycle(
-                market
+                market,
+                shared_context,
             )
             return
 

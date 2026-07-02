@@ -1,27 +1,3 @@
-from .fyers_auth import get_fyers
+from shared.fyers_market import get_ltp
 
-fyers = get_fyers()
-
-
-def get_ltp(symbol):
-    """
-    Returns latest traded price.
-    """
-
-    if not symbol:
-        return None
-
-    response = fyers.quotes(
-        {
-            "symbols": symbol
-        }
-    )
-
-    try:
-        return (
-            response["d"][0]
-            ["v"]["lp"]
-        )
-
-    except Exception:
-        return None
+__all__ = ["get_ltp"]

@@ -1,139 +1,62 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from shared.daily_pnl import (
-    save_daily_pnl
-)
+from shared.daily_pnl import save_daily_pnl
+from shared.database import get_daily_trade_stats
+from shared.telegram_bot import send_daily_summary_message
+from shared.config import TIMEZONE
 
-from shared.telegram_bot import (
-    send_message
-)
+IST = ZoneInfo(TIMEZONE)
 
-IST = ZoneInfo(
-    "Asia/Kolkata"
-)
+
+def _format_currency(value: float) -> str:
+    sign = "+" if value >= 0 else "-"
+    return f"{sign}₹{abs(value):,.2f}"
 
 
 def generate_daily_summary(
     portfolios,
-    opening_capital
+    opening_capital,
 ):
     """
-    Generates Telegram daily summary
-    and saves daily PnL.
+    Generates per-AI daily summary messages.
     """
+    summaries = []
+    trade_date = datetime.now(IST).strftime("%Y-%m-%d")
 
-    summary = []
-
-    winner = None
-    winner_pnl = float("-inf")
-
-    trade_date = (
-        datetime.now(
-            IST
-        ).strftime(
-            "%Y-%m-%d"
-        )
-    )
-
-    for ai_name, portfolio in (
-        portfolios.items()
-    ):
-
-        opening = (
-            opening_capital.get(
-                ai_name,
-                500000
-            )
-        )
-
-        closing = (
-            portfolio.equity
-        )
-
-        pnl = round(
-            closing - opening,
-            2
-        )
-
-        trades = getattr(
-            portfolio,
-            "trade_count",
-            0
-        )
+    for ai_name, portfolio in portfolios.items():
+        opening = opening_capital.get(ai_name, 500000)
+        closing = portfolio.equity
+        stats = get_daily_trade_stats(ai_name, trade_date)
 
         save_daily_pnl(
             trade_date=trade_date,
             ai_name=ai_name,
             opening_capital=opening,
             closing_capital=closing,
-            pnl=pnl,
-            trades=trades
+            pnl=round(closing - opening, 2),
+            trades=stats["trades"],
         )
 
-        summary.append(
-            {
-                "name": ai_name,
-                "pnl": pnl,
-                "trades": trades
-            }
+        message = (
+            f"{ai_name.upper()}\n\n"
+            f"Trades : {stats['trades']}\n"
+            f"Wins : {stats['wins']}\n"
+            f"Losses : {stats['losses']}\n"
+            f"Realized PnL : {_format_currency(stats['realized_pnl'])}\n"
+            f"Ending Capital : ₹{closing:,.2f}"
         )
+        summaries.append(message)
 
-        if pnl > winner_pnl:
-
-            winner_pnl = pnl
-            winner = ai_name
-
-    message = (
-        "📊 DAILY SUMMARY\n\n"
-    )
-
-    for item in summary:
-
-        emoji = {
-            "gpt": "🤖",
-            "gemini": "💎",
-            "grok": "🚀"
-        }.get(
-            item["name"],
-            "📈"
-        )
-
-        message += (
-            f"{emoji} "
-            f"{item['name'].upper()}\n"
-            f"Trades: "
-            f"{item['trades']}\n"
-            f"PnL: ₹"
-            f"{item['pnl']:.2f}\n\n"
-        )
-
-    if winner:
-
-        message += (
-            f"🏆 Winner: "
-            f"{winner.upper()} "
-            f"(₹{winner_pnl:.2f})"
-        )
-
-    return message
+    return summaries
 
 
 def send_daily_summary(
     portfolios,
-    opening_capital
+    opening_capital,
 ):
     """
-    Sends Telegram daily summary.
+    Sends one Telegram daily summary per AI.
     """
-
-    message = (
-        generate_daily_summary(
-            portfolios,
-            opening_capital
-        )
-    )
-
-    send_message(
-        message
-    )
+    for message in generate_daily_summary(portfolios, opening_capital):
+        send_daily_summary_message(message)
