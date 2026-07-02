@@ -23,6 +23,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 import logging
 
+from shared.config import INITIAL_CAPITAL, LOT_SIZE
+
 from .config import StrategyConfig
 
 logging.getLogger(__name__).setLevel(logging.WARNING)
@@ -91,7 +93,6 @@ class NiftyMomentumScalper:
         Backtest for development/validation only.
         Uses local lot size for P&L simulation (engine uses real current NSE lot size in live).
         """
-        LOCAL_LOT_SIZE = 65  # Current NSE value for simulation only. Do not use in live path.
         df = self.add_indicators(df)
         if len(df) < 50:
             return {"error": "Insufficient data after indicators"}
@@ -100,7 +101,7 @@ class NiftyMomentumScalper:
         entry_price = 0.0
         entry_idx = 0
         trades = []
-        equity = 500_000.0
+        equity = float(INITIAL_CAPITAL)
         equity_curve = [equity]
 
         for i in range(len(df)):
@@ -117,7 +118,7 @@ class NiftyMomentumScalper:
 
                 if exit_now:
                     exit_price = row["close"]
-                    pnl = (exit_price - entry_price) * position * LOCAL_LOT_SIZE
+                    pnl = (exit_price - entry_price) * position * LOT_SIZE
                     equity += pnl
                     trades.append({
                         "entry_time": str(df.index[entry_idx]),
@@ -346,8 +347,8 @@ def generate_signal(snapshot: dict) -> dict:
             return {"action": "HOLD", "reason": "No valid option premium/symbol"}
 
         # Dynamic lots: scale with equity (for compounding) + signal strength
-        equity = _safe_float(snapshot.get("equity")) or 500_000.0
-        scale = max(0.4, min(4.0, equity / 500_000.0))
+        equity = _safe_float(snapshot.get("equity")) or float(INITIAL_CAPITAL)
+        scale = max(0.4, min(4.0, equity / float(INITIAL_CAPITAL)))
         extra = max(0, score - _LIVE_CONFIG.min_score_long)
         lots = int((_LIVE_CONFIG.base_lots + extra * _LIVE_CONFIG.lots_per_extra_confluence) * scale)
         lots = max(1, min(_LIVE_CONFIG.max_lots, lots))

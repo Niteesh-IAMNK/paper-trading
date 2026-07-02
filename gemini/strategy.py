@@ -4,6 +4,8 @@ Focuses strictly on evaluating market structure, computing indicators,
 and maximizing geometric portfolio compounding through dynamic lot sizing.
 """
 
+from shared.config import INITIAL_CAPITAL
+
 from . import config
 
 # In-memory state tracking for indicators and peak profit tracking
@@ -23,7 +25,7 @@ def generate_signal(snapshot: dict) -> dict:
         return _hold("Invalid snapshot structure.")
 
     nifty_price = snapshot.get("nifty")
-    equity = snapshot.get("equity", 500000.0)
+    equity = snapshot.get("equity", float(INITIAL_CAPITAL))
     has_position = snapshot.get("has_position", False)
     open_position = snapshot.get("position")
     

@@ -57,6 +57,7 @@ from shared.engine_scheduler import (
 )
 
 from shared.signal_adapter import prepare_execution_signal
+from shared.config import INITIAL_CAPITAL
 
 IST = ZoneInfo(
     "Asia/Kolkata"
@@ -69,9 +70,9 @@ PORTFOLIOS = {
 }
 
 DAY_OPENING_CAPITAL = {
-    "gpt": 500000,
-    "gemini": 500000,
-    "grok": 500000
+    "gpt": INITIAL_CAPITAL,
+    "gemini": INITIAL_CAPITAL,
+    "grok": INITIAL_CAPITAL,
 }
 
 SQUARE_OFF_DONE = False
