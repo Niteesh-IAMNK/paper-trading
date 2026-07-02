@@ -1,32 +1,35 @@
 """
 Microsoft Edge browser automation for FYERS login via Playwright.
 
-Uses a dedicated persistent profile so other Edge profiles are not affected.
+Uses a dedicated persistent profile at profiles/fyers/.
 """
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from auth_helper.callback_server import (
+from shared.fyers_auth import (
+    FYERS_PIN,
+    FYERS_USER_ID,
+    validate_auth_config,
+)
+from shared.fyers_callback import (
     AuthCodeCapture,
     CallbackServer,
     monitor_page_for_auth_code,
 )
-from auth_helper.config import (
-    BROWSER_CHANNEL,
-    BROWSER_PROFILE_DIR,
-    FYERS_PIN,
-    FYERS_USER_ID,
-    HEADLESS,
-    LOGIN_TIMEOUT_MS,
-    OTP_POLL_INTERVAL_MS,
-    validate_config,
-)
-from auth_helper.logger import log_error, log_exception, log_info, log_warning
+from shared.fyers_logger import log_error, log_exception, log_info, log_warning
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page, Playwright
+
+BROWSER_PROFILE_DIR = Path("profiles/fyers")
+BROWSER_CHANNEL = "msedge"
+HEADLESS = os.getenv("FYERS_AUTH_HEADLESS", "false").lower() == "true"
+LOGIN_TIMEOUT_MS = int(os.getenv("FYERS_AUTH_TIMEOUT_MS", "300000"))
+OTP_POLL_INTERVAL_MS = 2000
 
 
 class BrowserLoginError(Exception):
@@ -40,7 +43,7 @@ def run_browser_login(login_url: str) -> str:
     User ID and PIN are filled automatically. If OTP is required, the flow
     pauses until the user completes it manually in the browser.
     """
-    config_errors = validate_config()
+    config_errors = validate_auth_config()
     if config_errors:
         raise BrowserLoginError(
             "Invalid configuration: " + "; ".join(config_errors)
@@ -57,8 +60,7 @@ def run_browser_login(login_url: str) -> str:
     except ImportError as exc:
         raise BrowserLoginError(
             "Playwright is not installed. "
-            "Run: pip install -r auth_helper/requirements.txt "
-            "&& playwright install msedge"
+            "Run: pip install -r requirements.txt && playwright install msedge"
         ) from exc
 
     callback.start()
@@ -93,16 +95,13 @@ def _launch_edge_context(playwright: Playwright):
         user_data_dir=str(BROWSER_PROFILE_DIR),
         channel=BROWSER_CHANNEL,
         headless=HEADLESS,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-        ],
+        args=["--disable-blink-features=AutomationControlled"],
         viewport={"width": 1280, "height": 900},
         ignore_https_errors=True,
     )
 
 
 def _perform_login(page: Page) -> None:
-    """Enter User ID and PIN on the FYERS login page."""
     _click_login_with_client_id(page)
     _fill_user_id(page)
     _fill_pin(page)
@@ -129,21 +128,18 @@ def _click_login_with_client_id(page: Page) -> None:
 
 def _fill_user_id(page: Page) -> None:
     selectors = ["#fy_client_id", "input[name='fy_id']", "#clientId"]
-    filled = False
     for selector in selectors:
         locator = page.locator(selector)
         if locator.count() > 0 and locator.first.is_visible():
             locator.first.fill(FYERS_USER_ID)
             locator.first.press("Enter")
-            filled = True
             log_info("User ID entered")
             page.wait_for_timeout(1500)
-            break
+            return
 
-    if not filled:
-        raise BrowserLoginError(
-            "Could not find FYERS User ID input field on login page"
-        )
+    raise BrowserLoginError(
+        "Could not find FYERS User ID input field on login page"
+    )
 
 
 def _fill_pin(page: Page) -> None:
@@ -151,7 +147,6 @@ def _fill_pin(page: Page) -> None:
     if len(pin) != 4:
         raise BrowserLoginError("FYERS_PIN must be exactly 4 digits")
 
-    # FYERS uses four separate digit inputs inside verifyPinForm
     pin_form = page.locator("#verifyPinForm")
     if pin_form.count() > 0:
         digits = ["#first", "#second", "#third", "#fourth"]
@@ -162,7 +157,6 @@ def _fill_pin(page: Page) -> None:
         log_info("PIN entered")
         return
 
-    # Fallback: single PIN input
     single_pin = page.locator(
         "input[type='password'], input[placeholder*='PIN'], input[name='pin']"
     )
@@ -189,7 +183,6 @@ def _submit_pin(page: Page) -> None:
 
 
 def _handle_otp_if_required(page: Page) -> None:
-    """Pause for manual OTP entry when the OTP/TOTP screen is shown."""
     otp_indicators = [
         "#confirmOtpSubmit",
         "text=Enter the 6-digit OTP",
@@ -203,7 +196,7 @@ def _handle_otp_if_required(page: Page) -> None:
             try:
                 if locator.first.is_visible(timeout=3000):
                     log_info(
-                        "OTP required — waiting for user to complete it manually"
+                        "Waiting for OTP — complete it manually in the browser"
                     )
                     print(
                         "\n>>> OTP required. Complete OTP in the Edge window. "
@@ -219,8 +212,6 @@ def _wait_for_auth_code(
     capture: AuthCodeCapture,
     callback: CallbackServer,
 ) -> str | None:
-    """Wait for redirect containing auth_code."""
-    # App permission screen may appear after PIN/OTP
     _click_allow_if_present(page)
 
     return monitor_page_for_auth_code(
@@ -232,7 +223,6 @@ def _wait_for_auth_code(
 
 
 def _click_allow_if_present(page: Page) -> None:
-    """Click through FYERS app permission / consent screens if shown."""
     allow_selectors = [
         "text=Allow",
         "text=Authorize",

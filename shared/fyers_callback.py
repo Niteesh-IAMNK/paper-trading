@@ -1,19 +1,20 @@
 """
 Local HTTP callback server for capturing FYERS auth_code.
 
-Only started when FYERS_REDIRECT_URI points to a local HTTP endpoint.
+Started when FYERS_REDIRECT_URI points to a local HTTP endpoint.
 Browser URL monitoring is used as a fallback for other redirect URIs.
 """
 
 from __future__ import annotations
 
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
-from auth_helper.config import parse_redirect_uri
-from auth_helper.logger import log_error, log_info
+from shared.fyers_auth import REDIRECT_URI
+from shared.fyers_logger import log_error, log_info
 
 
 class AuthCodeCapture:
@@ -40,6 +41,19 @@ class AuthCodeCapture:
         return self.auth_code
 
 
+def parse_redirect_uri() -> tuple[str, int, str, bool]:
+    """Parse REDIRECT_URI into host, port, path, and local-server flag."""
+    parsed = urlparse(REDIRECT_URI)
+    host = parsed.hostname or "127.0.0.1"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    path = parsed.path or "/"
+    use_local_server = (
+        parsed.scheme == "http"
+        and host in {"127.0.0.1", "localhost"}
+    )
+    return host, port, path, use_local_server
+
+
 def extract_auth_code_from_url(url: str) -> str | None:
     """Extract auth_code from a redirect URL query string."""
     if not url or "auth_code=" not in url:
@@ -51,7 +65,6 @@ def extract_auth_code_from_url(url: str) -> str | None:
     if codes:
         return codes[0]
 
-    # Fallback: manual parse for malformed URLs
     try:
         start = url.index("auth_code=") + len("auth_code=")
         remainder = url[start:]
@@ -115,7 +128,6 @@ def _make_handler(
             fmt: str,
             *args: object,
         ) -> None:
-            # Suppress default stderr logging; we log explicitly.
             pass
 
         def do_GET(self) -> None:
@@ -159,11 +171,7 @@ def monitor_page_for_auth_code(
     timeout_ms: int,
     poll_interval_ms: int = 2000,
 ) -> str | None:
-    """
-    Poll the browser URL until auth_code appears or timeout is reached.
-    """
-    import time
-
+    """Poll the browser URL until auth_code appears or timeout is reached."""
     deadline = time.time() + (timeout_ms / 1000)
     while time.time() < deadline:
         if capture.auth_code:

@@ -1,8 +1,0 @@
-# FYERS auth utility dependencies (Windows 11 / macOS)
-# Install: pip install -r auth_helper/requirements.txt
-# Then:    playwright install msedge
-
-playwright>=1.40.0
-python-dotenv>=1.0.0
-PyJWT>=2.8.0
-fyers-apiv3>=3.1.13

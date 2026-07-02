@@ -12,3 +12,4 @@ matplotlib
 psutil
 waitress
 schedule
+playwright>=1.40.0

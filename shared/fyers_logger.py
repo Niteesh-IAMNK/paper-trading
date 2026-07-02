@@ -1,4 +1,4 @@
-"""Logging for the FYERS auth utility."""
+"""Logging for FYERS authentication and token renewal."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ import logging
 import sys
 from pathlib import Path
 
-from auth_helper.config import LOG_DIR, LOG_FILE
+LOG_DIR = Path("logs")
+LOG_FILE = LOG_DIR / "auth.log"
 
 _LOG_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
 _LOGGER_NAME = "fyers-auth"
