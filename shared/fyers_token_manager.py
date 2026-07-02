@@ -1,4 +1,7 @@
 import json
+import os
+import sys
+import threading
 import time
 
 import jwt
@@ -13,12 +16,35 @@ from shared.fyers_auth import (
 )
 from shared.fyers_browser import BrowserLoginError, run_browser_login
 from shared.fyers_logger import log_error, log_info, log_warning
+from shared.telegram_bot import send_message
 
 TOKEN_FILE = Path("fyers_token.json")
+LOCK_FILE = Path("profiles/fyers/.auth.lock")
+MAX_RENEWAL_ATTEMPTS = 3
+LOCK_TIMEOUT_SECONDS = 600
+
+_THREAD_LOCK = threading.Lock()
+_session_validated = False
+_renewal_performed = False
+
+TELEGRAM_SUCCESS = (
+    "✅ FYERS Login Successful\n\n"
+    "Access token renewed.\n\n"
+    "Trading engine starting..."
+)
+TELEGRAM_FAILURE = (
+    "❌ FYERS Login Failed\n\n"
+    "Trading engine NOT started.\n\n"
+    "Manual intervention required."
+)
 
 
 class TokenRenewalError(Exception):
     """Raised when token renewal or verification fails."""
+
+
+class AuthLockTimeout(TokenRenewalError):
+    """Raised when waiting for the authentication lock times out."""
 
 
 def load_tokens():
@@ -94,28 +120,262 @@ def get_token_expiry():
         return None
 
 
+def _build_fyers_client(access_token: str | None = None):
+    return fyersModel.FyersModel(
+        client_id=CLIENT_ID,
+        token=access_token or get_access_token(),
+        is_async=False,
+    )
+
+
+def _is_auth_failure(profile: object) -> bool:
+    """Return True when get_profile() indicates an authentication problem."""
+    if not isinstance(profile, dict):
+        return True
+
+    status = str(profile.get("s", "")).lower()
+    if status == "ok":
+        return False
+
+    code = profile.get("code")
+    message = str(profile.get("message", "")).lower()
+
+    auth_codes = {-17, 403, 401, -16, -18}
+    if code in auth_codes:
+        return True
+
+    auth_keywords = (
+        "auth",
+        "token",
+        "expired",
+        "invalid",
+        "permission",
+        "login",
+    )
+    return any(keyword in message for keyword in auth_keywords)
+
+
+def _verify_profile_for_token(access_token: str | None = None) -> dict:
+    """
+    Call get_profile() and return the profile on success.
+
+    Raises TokenRenewalError when the token is rejected.
+    """
+    log_info("Verifying account with get_profile()...")
+
+    try:
+        profile = _build_fyers_client(access_token).get_profile()
+    except Exception as exc:
+        raise TokenRenewalError(
+            f"Verifying account failed (get_profile request error): {exc}"
+        ) from exc
+
+    if _is_auth_failure(profile):
+        code = profile.get("code") if isinstance(profile, dict) else None
+        message = (
+            profile.get("message", "Unknown error")
+            if isinstance(profile, dict)
+            else str(profile)
+        )
+        raise TokenRenewalError(
+            f"Verifying account failed (get_profile auth error, code={code}): "
+            f"{message}"
+        )
+
+    return profile
+
+
+def _acquire_auth_lock():
+    """Acquire in-process and cross-process authentication locks."""
+    _THREAD_LOCK.acquire()
+    lock_handle = None
+    deadline = time.time() + LOCK_TIMEOUT_SECONDS
+
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    while time.time() < deadline:
+        try:
+            lock_handle = open(LOCK_FILE, "a+")
+            if sys.platform == "win32":
+                import msvcrt
+
+                lock_handle.seek(0)
+                msvcrt.locking(
+                    lock_handle.fileno(),
+                    msvcrt.LK_NBLCK,
+                    1,
+                )
+            else:
+                import fcntl
+
+                fcntl.flock(
+                    lock_handle.fileno(),
+                    fcntl.LOCK_EX | fcntl.LOCK_NB,
+                )
+
+            lock_handle.seek(0)
+            lock_handle.truncate()
+            lock_handle.write(str(os.getpid()))
+            lock_handle.flush()
+            return lock_handle
+
+        except (OSError, BlockingIOError):
+            if lock_handle is not None:
+                lock_handle.close()
+                lock_handle = None
+            log_info(
+                "Authentication already in progress — waiting for lock..."
+            )
+            time.sleep(2)
+
+    _THREAD_LOCK.release()
+    raise AuthLockTimeout(
+        "Timed out waiting for another authentication process to finish"
+    )
+
+
+def _release_auth_lock(lock_handle) -> None:
+    if lock_handle is not None:
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                lock_handle.seek(0)
+                msvcrt.locking(
+                    lock_handle.fileno(),
+                    msvcrt.LK_UNLCK,
+                    1,
+                )
+            else:
+                import fcntl
+
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_handle.close()
+
+    if _THREAD_LOCK.locked():
+        _THREAD_LOCK.release()
+
+
+class auth_lock:
+    """Context manager for authentication locking."""
+
+    def __enter__(self):
+        self._handle = _acquire_auth_lock()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        _release_auth_lock(self._handle)
+        return False
+
+
 def ensure_valid_token() -> str:
     """
     Ensure a valid FYERS access token is available.
 
-    Returns the access token. Renews via browser login when expired or missing.
+    Uses JWT expiry as a fast pre-check, then validates with get_profile().
+    Renews automatically when verification fails.
     """
-    if TOKEN_FILE.exists() and not token_expired():
+    global _session_validated
+
+    if _session_validated:
         token = get_access_token()
         if token:
             return token
 
-    log_info("Token missing or expired — starting automatic renewal")
-    return _renew_token()
+    with auth_lock():
+        token = _resolve_valid_token(notify_on_renewal=False)
+        _session_validated = True
+        return token
 
 
-def _renew_token() -> str:
+def bootstrap_authentication() -> None:
+    """
+    Startup authentication gate.
+
+    Verifies or renews the token before the trading engine starts.
+    Exits the process gracefully when renewal fails after all retries.
+    """
+    global _session_validated, _renewal_performed
+
+    log_info("Checking token...")
+
+    try:
+        with auth_lock():
+            token = _resolve_valid_token(notify_on_renewal=True)
+            _session_validated = True
+            log_info("Authentication successful")
+            print(f"FYERS token ready ({token[:12]}...)")
+    except TokenRenewalError as exc:
+        log_error(f"Authentication failed: {exc}")
+        send_message(TELEGRAM_FAILURE)
+        print(
+            "\n❌ FYERS Login Failed\n"
+            "Trading engine NOT started.\n"
+            "Manual intervention required.\n"
+            f"Details: {exc}\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def _resolve_valid_token(notify_on_renewal: bool) -> str:
+    global _renewal_performed
+
+    token = get_access_token()
+
+    if not token:
+        log_info("No token found in fyers_token.json")
+    elif token_expired():
+        log_info("Token expired")
+    else:
+        log_info("JWT still valid — verifying with API")
+        try:
+            _verify_profile_for_token(token)
+            log_info("Existing token accepted by get_profile()")
+            return token
+        except TokenRenewalError as exc:
+            log_warning(
+                "Stored token rejected by get_profile() — renewal required: "
+                f"{exc}"
+            )
+
+    token = _renew_token_with_retries()
+    _renewal_performed = True
+
+    if notify_on_renewal:
+        send_message(TELEGRAM_SUCCESS)
+
+    return token
+
+
+def _renew_token_with_retries() -> str:
     config_errors = validate_auth_config()
     if config_errors:
         raise TokenRenewalError(
             "Configuration error: " + "; ".join(config_errors)
         )
 
+    last_error: TokenRenewalError | None = None
+
+    for attempt in range(1, MAX_RENEWAL_ATTEMPTS + 1):
+        log_info(f"Renewal attempt {attempt}/{MAX_RENEWAL_ATTEMPTS}")
+        try:
+            return _renew_token()
+        except TokenRenewalError as exc:
+            last_error = exc
+            log_error(f"Renewal attempt {attempt} failed: {exc}")
+
+    message = (
+        f"Token renewal failed after {MAX_RENEWAL_ATTEMPTS} attempts"
+    )
+    if last_error is not None:
+        message = f"{message}: {last_error}"
+
+    raise TokenRenewalError(message)
+
+
+def _renew_token() -> str:
     try:
         login_url = get_login_url()
     except Exception as exc:
@@ -126,15 +386,17 @@ def _renew_token() -> str:
     try:
         auth_code = run_browser_login(login_url)
     except BrowserLoginError as exc:
-        raise TokenRenewalError(f"Browser login failed: {exc}") from exc
+        raise TokenRenewalError(
+            f"Browser login step failed: {exc}"
+        ) from exc
 
-    log_info("Auth code captured — exchanging for access token")
+    log_info("Redirect received — generating access token")
 
     try:
         token_response = generate_access_token(auth_code)
     except Exception as exc:
         raise TokenRenewalError(
-            f"Failed to exchange auth_code for token: {exc}"
+            f"Generating access token failed: {exc}"
         ) from exc
 
     if not isinstance(token_response, dict):
@@ -145,62 +407,36 @@ def _renew_token() -> str:
     status = str(token_response.get("s", "")).lower()
     if status == "error":
         message = token_response.get("message", "Unknown FYERS API error")
-        raise TokenRenewalError(f"Token exchange failed: {message}")
+        raise TokenRenewalError(
+            f"Generating access token failed (API error): {message}"
+        )
 
     access_token = token_response.get("access_token")
     if not access_token:
         raise TokenRenewalError(
-            "Token exchange response did not include access_token"
+            "Generating access token failed: access_token missing in response"
         )
 
+    log_info("Saving fyers_token.json...")
     save_tokens(token_response)
-    log_info("Token generated and saved to fyers_token.json")
+    log_info("fyers_token.json saved")
 
-    _verify_token()
-    return access_token
-
-
-def _verify_token() -> None:
-    """Verify the saved token by calling FYERS get_profile()."""
-    try:
-        fyers = fyersModel.FyersModel(
-            client_id=CLIENT_ID,
-            token=get_access_token(),
-            is_async=False,
-        )
-        profile = fyers.get_profile()
-    except Exception as exc:
-        raise TokenRenewalError(
-            f"Token verification failed (get_profile error): {exc}"
-        ) from exc
-
-    if not isinstance(profile, dict):
-        raise TokenRenewalError(
-            f"Unexpected get_profile() response: {profile}"
-        )
-
-    status = profile.get("s", "").lower()
-    if status == "ok":
-        log_info("Verification successful")
-        name = (
-            profile.get("data", {}).get("name")
-            or profile.get("data", {}).get("fy_id")
-            or "FYERS user"
-        )
-        print(f"FYERS authentication successful: {name}")
-        return
-
-    code = profile.get("code")
-    message = profile.get("message", "Unknown error")
-    raise TokenRenewalError(
-        f"Token verification failed (code={code}): {message}"
+    profile = _verify_profile_for_token(access_token)
+    name = (
+        profile.get("data", {}).get("name")
+        or profile.get("data", {}).get("fy_id")
+        or "FYERS user"
     )
+    log_info(f"Authentication successful for {name}")
+    print(f"FYERS authentication successful: {name}")
+
+    return access_token
 
 
 def refresh_access_token():
     """Renew access token via browser login."""
     log_warning("Refreshing access token via browser login")
-    return _renew_token()
+    return _renew_token_with_retries()
 
 
 def get_valid_access_token():

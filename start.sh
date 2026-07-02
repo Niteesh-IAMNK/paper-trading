@@ -8,4 +8,10 @@ if [[ -f "venv/bin/activate" ]]; then
   source "venv/bin/activate"
 fi
 
-python3 app_runner.py
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON=python3
+else
+  PYTHON=python
+fi
+
+"$PYTHON" app_runner.py

@@ -23,7 +23,7 @@ from shared.fyers_callback import (
 from shared.fyers_logger import log_error, log_exception, log_info, log_warning
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page, Playwright
+    from playwright.sync_api import BrowserContext, Page, Playwright
 
 BROWSER_PROFILE_DIR = Path("profiles/fyers")
 BROWSER_CHANNEL = "msedge"
@@ -49,11 +49,13 @@ def run_browser_login(login_url: str) -> str:
             "Invalid configuration: " + "; ".join(config_errors)
         )
 
-    log_info("Login started")
+    log_info("Waiting for login...")
     BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
     capture = AuthCodeCapture()
     callback = CallbackServer(capture)
+    playwright: Playwright | None = None
+    context: BrowserContext | None = None
 
     try:
         from playwright.sync_api import sync_playwright
@@ -63,31 +65,50 @@ def run_browser_login(login_url: str) -> str:
             "Run: pip install -r requirements.txt && playwright install msedge"
         ) from exc
 
-    callback.start()
-
     try:
-        with sync_playwright() as playwright:
-            log_info("Browser launched (Microsoft Edge)")
-            context = _launch_edge_context(playwright)
-            try:
-                page = context.pages[0] if context.pages else context.new_page()
-                page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
-                _perform_login(page)
-                auth_code = _wait_for_auth_code(page, capture, callback)
-                if not auth_code:
-                    raise BrowserLoginError(
-                        "Failed to capture auth_code from redirect"
-                    )
-                return auth_code
-            finally:
-                context.close()
+        callback.start()
+        log_info("Launching Microsoft Edge...")
+        playwright = sync_playwright().start()
+        context = _launch_edge_context(playwright)
+
+        page = context.pages[0] if context.pages else context.new_page()
+        page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
+        _perform_login(page)
+
+        auth_code = _wait_for_auth_code(page, capture, callback)
+        if not auth_code:
+            raise BrowserLoginError(
+                "Redirect step failed: auth_code not captured from redirect URL"
+            )
+
+        log_info("Redirect received")
+        return auth_code
+
     except BrowserLoginError:
         raise
     except Exception as exc:
-        log_exception(f"Browser login failed: {exc}")
+        log_exception(f"Browser login step failed: {exc}")
         raise BrowserLoginError(str(exc)) from exc
     finally:
-        callback.stop()
+        if context is not None:
+            try:
+                context.close()
+                log_info("Edge browser closed")
+            except Exception as exc:
+                log_warning(f"Closing Edge browser failed: {exc}")
+
+        if playwright is not None:
+            try:
+                playwright.stop()
+                log_info("Playwright stopped")
+            except Exception as exc:
+                log_warning(f"Stopping Playwright failed: {exc}")
+
+        try:
+            callback.stop()
+            log_info("Callback server stopped")
+        except Exception as exc:
+            log_warning(f"Stopping callback server failed: {exc}")
 
 
 def _launch_edge_context(playwright: Playwright):
@@ -138,7 +159,7 @@ def _fill_user_id(page: Page) -> None:
             return
 
     raise BrowserLoginError(
-        "Could not find FYERS User ID input field on login page"
+        "Login step failed: FYERS User ID input field not found"
     )
 
 
@@ -165,7 +186,9 @@ def _fill_pin(page: Page) -> None:
         log_info("PIN entered")
         return
 
-    raise BrowserLoginError("Could not find PIN input fields on login page")
+    raise BrowserLoginError(
+        "Login step failed: PIN input fields not found"
+    )
 
 
 def _submit_pin(page: Page) -> None:
@@ -195,9 +218,7 @@ def _handle_otp_if_required(page: Page) -> None:
         if locator.count() > 0:
             try:
                 if locator.first.is_visible(timeout=3000):
-                    log_info(
-                        "Waiting for OTP — complete it manually in the browser"
-                    )
+                    log_info("Waiting for OTP...")
                     print(
                         "\n>>> OTP required. Complete OTP in the Edge window. "
                         "Waiting for redirect...\n"

@@ -3,6 +3,10 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from shared.fyers_token_manager import bootstrap_authentication
+
+bootstrap_authentication()
+
 from shared.market_data import (
     refresh_indices,
     get_market
