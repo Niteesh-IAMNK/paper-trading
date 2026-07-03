@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from shared.daily_pnl import save_daily_pnl
 from shared.database import get_daily_trade_stats
 from shared.telegram_bot import send_daily_summary_message
-from shared.config import TIMEZONE
+from shared.config import INITIAL_CAPITAL, TIMEZONE
 
 IST = ZoneInfo(TIMEZONE)
 
@@ -25,7 +25,7 @@ def generate_daily_summary(
     trade_date = datetime.now(IST).strftime("%Y-%m-%d")
 
     for ai_name, portfolio in portfolios.items():
-        opening = opening_capital.get(ai_name, 500000)
+        opening = opening_capital.get(ai_name, INITIAL_CAPITAL)
         closing = portfolio.equity
         stats = get_daily_trade_stats(ai_name, trade_date)
 

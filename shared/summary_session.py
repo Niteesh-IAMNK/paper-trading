@@ -1,25 +1,12 @@
-from datetime import (
-    datetime
-)
-from zoneinfo import (
-    ZoneInfo
-)
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-IST = ZoneInfo(
-    "Asia/Kolkata"
-)
+from shared.config import MARKET_CLOSE, TIMEZONE
+
+IST = ZoneInfo(TIMEZONE)
+_SUMMARY_TIME = MARKET_CLOSE[:5]
 
 
 def is_summary_time():
-
-    now = datetime.now(
-        IST
-    ).strftime(
-        "%H:%M"
-    )
-
-    return (
-        "15:30"
-        <= now <
-        "15:31"
-    )
+    now = datetime.now(IST).strftime("%H:%M")
+    return _SUMMARY_TIME <= now < "15:31"

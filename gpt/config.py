@@ -6,6 +6,8 @@ execution, position management, and risk enforcement. These values only shape
 the strategy's directional edge model and requested lot count.
 """
 
+from shared.config import INITIAL_CAPITAL
+
 # Indicator memory
 MAX_HISTORY = 260
 FAST_EMA = 8
@@ -27,7 +29,7 @@ OPTION_CONFIRMATION_MOVE = 0.018
 OPTION_MIN_PREMIUM = 15
 
 # Compounding-aware lot intent
-REFERENCE_EQUITY = 500_000
+REFERENCE_EQUITY = INITIAL_CAPITAL
 BASE_LOTS = 2
 MAX_LOTS = 300
 MEDIUM_EDGE_MULTIPLIER = 1.7

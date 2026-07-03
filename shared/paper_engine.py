@@ -13,6 +13,9 @@ from .database import (
 )
 
 
+from .lot_sizing import validate_buy_quantity
+
+
 def buy(
     portfolio,
     symbol: str,
@@ -29,6 +32,10 @@ def buy(
 
     if has_open_position(portfolio):
         return False, "Position already open.", None
+
+    valid, validation_message = validate_buy_quantity(quantity)
+    if not valid:
+        return False, validation_message, None
 
     cost = quantity * price
 

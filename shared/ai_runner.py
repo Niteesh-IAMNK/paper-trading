@@ -25,7 +25,5 @@ def get_signal(ai_name, snapshot):
         send_ai_engine_error(ai_name, str(exc))
         return {
             "action": "HOLD",
-            "symbol": "",
-            "quantity": 0,
             "reason": f"Engine error: {exc}",
         }

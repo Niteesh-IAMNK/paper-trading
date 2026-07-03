@@ -60,9 +60,31 @@ def get_portfolio(ai_name):
 # Position
 # ========================
 
+def get_position(ai_name):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT symbol, quantity, entry_price, entry_time
+        FROM positions
+        WHERE ai_name = ?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (ai_name,))
+
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
 def save_position(ai_name, position):
     conn = get_connection()
     cur = conn.cursor()
+
+    cur.execute("""
+        DELETE FROM positions
+        WHERE ai_name = ?
+    """, (ai_name,))
 
     cur.execute("""
         INSERT INTO positions (
