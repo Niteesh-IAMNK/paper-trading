@@ -1,5 +1,4 @@
 requests==2.31.0
-fyers-apiv3==3.1.13
 python-dotenv==1.2.2
 pandas==2.3.3
 numpy==2.2.6
@@ -13,3 +12,17 @@ psutil
 waitress
 schedule
 playwright>=1.40.0
+
+# FYERS API runtime dependencies.
+# fyers-apiv3==3.1.13 pins aiohttp==3.9.3, which has no pre-built wheel for
+# Python 3.13 on Windows and forces a source build. Use a newer aiohttp with
+# the same ClientSession API that fyers-apiv3 uses.
+aiohttp>=3.10.11,<4
+aws-lambda-powertools==1.25.5
+setuptools>=68.0.0
+# asyncio PyPI backport is only for Python < 3.4; 3.13 uses stdlib asyncio.
+asyncio==3.4.3; python_version < "3.4"
+
+# Install fyers-apiv3 without dependency resolution so the aiohttp pin above is kept:
+#   pip install -r requirements-fyers.txt --no-deps
+# Or run install.bat / install.sh
