@@ -1,8 +1,12 @@
 """Unit tests for FYERS authentication logic (no live API required)."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from shared.fyers_callback import extract_auth_code_from_url
+from shared.fyers_browser import (
+    _perform_login,
+    _try_fill_user_id,
+)
 from shared.fyers_token_manager import (
     TokenRenewalError,
     _is_auth_failure,
@@ -72,6 +76,26 @@ def test_renew_token_with_retries_attempts_three_times():
         assert renew_mock.call_count == 3
 
 
+def test_try_fill_user_id_returns_false_when_field_missing():
+    page = MagicMock()
+    locator = MagicMock()
+    locator.count.return_value = 0
+    page.locator.return_value = locator
+
+    assert _try_fill_user_id(page) is False
+
+
+def test_perform_login_does_not_raise_when_user_id_missing():
+    page = MagicMock()
+    page.locator.return_value.count.return_value = 0
+    page.wait_for_timeout = MagicMock()
+
+    with patch("shared.fyers_browser._log_manual_login_required") as manual_log:
+        _perform_login(page)
+
+    manual_log.assert_called_once()
+
+
 if __name__ == "__main__":
     tests = [
         test_extract_auth_code_from_url,
@@ -80,6 +104,8 @@ if __name__ == "__main__":
         test_token_expired_without_token_file,
         test_renew_token_with_retries_fails_fast_on_config_error,
         test_renew_token_with_retries_attempts_three_times,
+        test_try_fill_user_id_returns_false_when_field_missing,
+        test_perform_login_does_not_raise_when_user_id_missing,
     ]
 
     for test in tests:

@@ -7,6 +7,7 @@ Uses a dedicated persistent profile at profiles/fyers/.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,7 +19,7 @@ from shared.fyers_auth import (
 from shared.fyers_callback import (
     AuthCodeCapture,
     CallbackServer,
-    monitor_page_for_auth_code,
+    extract_auth_code_from_url,
 )
 from shared.fyers_logger import log_error, log_exception, log_info, log_warning
 
@@ -40,8 +41,10 @@ def run_browser_login(login_url: str) -> str:
     """
     Launch Edge, complete FYERS login, and return the auth_code.
 
-    User ID and PIN are filled automatically. If OTP is required, the flow
-    pauses until the user completes it manually in the browser.
+    User ID and PIN are filled automatically when visible. If OTP, an
+    unexpected screen, or missing fields require user action, the browser
+    stays open until the redirect auth_code is captured or the timeout
+    expires (default 5 minutes).
     """
     config_errors = validate_auth_config()
     if config_errors:
@@ -123,11 +126,109 @@ def _launch_edge_context(playwright: Playwright):
 
 
 def _perform_login(page: Page) -> None:
+    """
+    Attempt automatic User ID / PIN entry when fields are visible.
+
+    Never raises when fields are missing — the caller waits for manual
+    completion and watches for the redirect auth_code instead.
+    """
+    page.wait_for_timeout(1000)
     _click_login_with_client_id(page)
-    _fill_user_id(page)
-    _fill_pin(page)
-    _submit_pin(page)
+
+    user_id_filled = _try_fill_user_id(page)
+    pin_filled = False
+
+    if user_id_filled or _pin_fields_visible(page):
+        pin_filled = _try_fill_pin(page)
+        if pin_filled:
+            _submit_pin(page)
+
     _handle_otp_if_required(page)
+
+    if not user_id_filled:
+        _log_manual_login_required()
+
+
+def _log_manual_login_required() -> None:
+    minutes = max(1, LOGIN_TIMEOUT_MS // 60000)
+    message = (
+        "Manual login required. Waiting for user completion..."
+    )
+    log_info(message)
+    print(
+        "\n>>> Manual login required. Complete login in the Edge window "
+        "(User ID, PIN, OTP, or any security checks). "
+        f"Waiting up to {minutes} minutes for redirect...\n"
+    )
+
+
+def _pin_fields_visible(page: Page) -> bool:
+    try:
+        if page.locator("#verifyPinForm").count() > 0:
+            return True
+
+        single_pin = page.locator(
+            "input[type='password'], input[placeholder*='PIN'], input[name='pin']"
+        )
+        return single_pin.count() > 0 and single_pin.first.is_visible(timeout=1000)
+    except Exception:
+        return False
+
+
+def _try_fill_user_id(page: Page) -> bool:
+    selectors = ["#fy_client_id", "input[name='fy_id']", "#clientId"]
+    for selector in selectors:
+        locator = page.locator(selector)
+        if locator.count() > 0:
+            try:
+                if locator.first.is_visible(timeout=3000):
+                    locator.first.fill(FYERS_USER_ID)
+                    locator.first.press("Enter")
+                    log_info("User ID entered")
+                    page.wait_for_timeout(1500)
+                    return True
+            except Exception:
+                continue
+
+    log_warning("FYERS User ID input field not found")
+    return False
+
+
+def _try_fill_pin(page: Page) -> bool:
+    pin = FYERS_PIN
+    if len(pin) != 4:
+        log_warning("FYERS_PIN must be exactly 4 digits; skipping PIN autofill")
+        return False
+
+    pin_form = page.locator("#verifyPinForm")
+    if pin_form.count() > 0:
+        try:
+            digits = ["#first", "#second", "#third", "#fourth"]
+            for index, digit_selector in enumerate(digits):
+                field = pin_form.locator(digit_selector)
+                if field.count() > 0:
+                    field.fill(pin[index])
+            log_info("PIN entered")
+            return True
+        except Exception as exc:
+            log_warning(f"PIN autofill failed: {exc}")
+            return False
+
+    single_pin = page.locator(
+        "input[type='password'], input[placeholder*='PIN'], input[name='pin']"
+    )
+    if single_pin.count() > 0:
+        try:
+            if single_pin.first.is_visible(timeout=3000):
+                single_pin.first.fill(pin)
+                log_info("PIN entered")
+                return True
+        except Exception as exc:
+            log_warning(f"PIN autofill failed: {exc}")
+            return False
+
+    log_warning("PIN input fields not found")
+    return False
 
 
 def _click_login_with_client_id(page: Page) -> None:
@@ -145,50 +246,6 @@ def _click_login_with_client_id(page: Page) -> None:
                 return
             except Exception:
                 continue
-
-
-def _fill_user_id(page: Page) -> None:
-    selectors = ["#fy_client_id", "input[name='fy_id']", "#clientId"]
-    for selector in selectors:
-        locator = page.locator(selector)
-        if locator.count() > 0 and locator.first.is_visible():
-            locator.first.fill(FYERS_USER_ID)
-            locator.first.press("Enter")
-            log_info("User ID entered")
-            page.wait_for_timeout(1500)
-            return
-
-    raise BrowserLoginError(
-        "Login step failed: FYERS User ID input field not found"
-    )
-
-
-def _fill_pin(page: Page) -> None:
-    pin = FYERS_PIN
-    if len(pin) != 4:
-        raise BrowserLoginError("FYERS_PIN must be exactly 4 digits")
-
-    pin_form = page.locator("#verifyPinForm")
-    if pin_form.count() > 0:
-        digits = ["#first", "#second", "#third", "#fourth"]
-        for index, digit_selector in enumerate(digits):
-            field = pin_form.locator(digit_selector)
-            if field.count() > 0:
-                field.fill(pin[index])
-        log_info("PIN entered")
-        return
-
-    single_pin = page.locator(
-        "input[type='password'], input[placeholder*='PIN'], input[name='pin']"
-    )
-    if single_pin.count() > 0:
-        single_pin.first.fill(pin)
-        log_info("PIN entered")
-        return
-
-    raise BrowserLoginError(
-        "Login step failed: PIN input fields not found"
-    )
 
 
 def _submit_pin(page: Page) -> None:
@@ -233,14 +290,40 @@ def _wait_for_auth_code(
     capture: AuthCodeCapture,
     callback: CallbackServer,
 ) -> str | None:
+    """
+    Poll the browser and callback server until auth_code appears.
+
+    Keeps Edge open for manual OTP / security screens while retrying
+    opportunistic autofill and authorize clicks on each poll.
+    """
     _click_allow_if_present(page)
 
-    return monitor_page_for_auth_code(
-        get_url=lambda: page.url,
-        capture=capture,
-        timeout_ms=LOGIN_TIMEOUT_MS,
-        poll_interval_ms=OTP_POLL_INTERVAL_MS,
+    deadline = time.time() + (LOGIN_TIMEOUT_MS / 1000)
+    poll_seconds = OTP_POLL_INTERVAL_MS / 1000
+
+    while time.time() < deadline:
+        if capture.auth_code:
+            return capture.auth_code
+
+        auth_code = extract_auth_code_from_url(page.url)
+        if auth_code:
+            capture.set_auth_code(auth_code)
+            log_info("Auth code captured from browser redirect URL")
+            return auth_code
+
+        _click_allow_if_present(page)
+        _handle_otp_if_required(page)
+
+        if _try_fill_user_id(page) and _try_fill_pin(page):
+            _submit_pin(page)
+
+        time.sleep(poll_seconds)
+
+    log_error(
+        f"Timed out waiting for auth_code redirect after "
+        f"{LOGIN_TIMEOUT_MS // 60000} minutes"
     )
+    return None
 
 
 def _click_allow_if_present(page: Page) -> None:
